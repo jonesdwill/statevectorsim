@@ -1,0 +1,21 @@
+[project]
+name = "statevectorsim"
+version = "0.1.0"
+authors = [
+  { name="William Jones", email="jonesdwill@outlook.com" },
+]
+description = "Simple quantum statevector simulator"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+
+dependencies = [
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
