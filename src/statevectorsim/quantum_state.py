@@ -18,6 +18,13 @@ class QuantumState:
     def get_probabilities(self):
         return np.abs(self.state) ** 2
 
+
+    def copy(self) -> 'QuantumState':
+        """ Creates a copy of the state for multi-shot runs. """
+        new_state = self.__class__(self.n)
+        new_state.state = self.state.copy()
+        return new_state
+
     def measure_qubit(self, qubit: int):
         """Measure a single qubit (big-endian) without reshaping or permuting."""
         target_bit = 1 << qubit
@@ -28,7 +35,12 @@ class QuantumState:
 
         # compute probabilities
         p0 = np.sum(np.abs(self.state[indices_0]) ** 2)
-        outcome = np.random.choice([0, 1], p=[p0, 1 - p0])
+        p1 = 1 - p0
+
+        # Ensure probabilities are clipped to [0, 1] due to possible floating point errors
+        probabilities = np.clip([p0, p1], 0.0, 1.0)
+        probabilities /= np.sum(probabilities)
+        outcome = np.random.choice([0, 1], p=probabilities)
 
         # collapse statevector
         if outcome == 0:
