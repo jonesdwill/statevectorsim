@@ -8,9 +8,9 @@ class QuantumState:
         self.state = np.zeros(self.dim, dtype=complex)
         self.basis_state()
 
-    def basis_state(self):
+    def basis_state(self, index: int = 0):
         self.state[:] = 0
-        self.state[0] = 1.0
+        self.state[index] = 1.0
 
     def statevector(self):
         return self.state.copy()
@@ -19,53 +19,41 @@ class QuantumState:
         return np.abs(self.state) ** 2
 
     def measure_qubit(self, qubit: int):
-        # re-shape statevector into an n-dimensional tensor and compute probabilities
-        probability_tensor = np.abs(self.state.reshape([2] * self.n)) ** 2
+        """Measure a single qubit (big-endian) without reshaping or permuting."""
+        target_bit = 1 << qubit
 
-        # permute axes to be able to slice measured qubit across all states
-        permutation = [qubit] + [i for i in range(self.n) if i != qubit]
-        permuted = np.transpose(probability_tensor, permutation)
+        # find indices where qubit is 0 or 1
+        indices_0 = np.where((np.arange(len(self.state)) & target_bit) == 0)[0]
+        indices_1 = np.where((np.arange(len(self.state)) & target_bit) != 0)[0]
 
-        # sum over all amplitudes where measured qubit = 0 to get probability p0
-        p0 = np.sum(permuted[0])
-
-        # randomly sample 0 or 1 for qubit.
+        # compute probabilities
+        p0 = np.sum(np.abs(self.state[indices_0]) ** 2)
         outcome = np.random.choice([0, 1], p=[p0, 1 - p0])
 
-        # create mask for statevector to force state to remain in place after measurement
-        mask = np.zeros([2] * self.n)
-        mask_tuple = (outcome,) + tuple(slice(None) for _ in range(self.n - 1))
-        mask[mask_tuple] = 1
+        # collapse statevector
+        if outcome == 0:
+            self.state[indices_1] = 0
+        else:
+            self.state[indices_0] = 0
 
-        # undo permutation to match original statevector axes
-        mask = np.transpose(mask, np.argsort(permutation))
-
-        # collapse statevector to measured state
-        new_state = (self.state.reshape([2] * self.n) * mask).reshape(self.dim)
-        self.state = new_state / np.linalg.norm(new_state) # normalise
+        # normalize
+        self.state /= np.linalg.norm(self.state)
 
         return outcome
 
     def measure_all(self):
-        """
-        Measure all qubits in the computational basis.
-        """
+        """Measure all qubits in the computational basis."""
+        # probabilities
+        probability_vector = np.abs(self.state) ** 2
 
-        # re-shape statevector into an n-dimensional tensor and compute probabilities
-        probability_tensor = np.abs(self.state.reshape([2] * self.n)) ** 2
+        # sample one index
+        index = np.random.choice(len(self.state), p=probability_vector)
 
-        # flatten tensor to get probability for each computational basis state
-        probability_vector = probability_tensor.flatten()
-
-        # sample one state according to the probabilities
-        index = np.random.choice(len(probability_vector), p=probability_vector)
-
-        # convert index to bitstring
+        # convert to bitstring (big-endian)
         outcome = [(index >> i) & 1 for i in reversed(range(self.n))]
 
-        # collapse statevector to measured basis state
-        new_state = np.zeros_like(self.state)
-        new_state[index] = 1.0
-        self.state = new_state
+        # collapse statevector
+        self.state[:] = 0
+        self.state[index] = 1.0
 
         return outcome

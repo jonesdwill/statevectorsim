@@ -9,23 +9,29 @@ class QuantumGate:
 
     @staticmethod
     def x(target: int):
-        """Pauli-X (NOT) gate"""
+        """Single Pauli-X (NOT) gate"""
         return QuantumGate(np.array([[0, 1], [1, 0]], dtype=complex), [target])
 
     @staticmethod
     def y(target: int):
-        """Pauli-Y gate"""
+        """Single Pauli-Y gate"""
         return QuantumGate(np.array([[0, -1j], [1j, 0]], dtype=complex), [target])
 
     @staticmethod
     def z(target: int):
-        """Pauli-Z gate"""
+        """Single Pauli-Z gate"""
         return QuantumGate(np.array([[1, 0], [0, -1]], dtype=complex), [target])
 
     @staticmethod
     def h(target: int):
-        """Hadamard gate"""
+        """Single Hadamard gate"""
         return QuantumGate((1/np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex), [target])
+
+
+    @staticmethod
+    def i(target: int):
+        """Identity gate"""
+        return QuantumGate(np.eye(2, dtype=complex), [target])
 
     @staticmethod
     def cx(control: int, target: int):
@@ -36,23 +42,48 @@ class QuantumGate:
                                      [0,0,1,0]], dtype=complex),
                            [control, target])
 
-    @staticmethod
-    def i(target: int):
-        """Identity gate"""
-        return QuantumGate(np.eye(2, dtype=complex), [target])
+    def apply(self, quantum_state):
+        """Apply gate to QuantumState using bitmask"""
+        state = quantum_state.state # statevector
+        n = quantum_state.n # number of qubits
+        k = len(self.targets) # number of targets
+        size = 1 << n  # represent 2^n as bit-shift.
 
-    def apply(self, quantum_state: QuantumState):
-        """Apply gate to QuantumState."""
-        n = quantum_state.n
-        state_tensor = quantum_state.state.reshape([2] * n)
+        # Precompute bitmasks for target qubits. 1 << t sets t-th bit to 1, all others to 0.
+        target_bits = [1 << t for t in self.targets]
 
-        # permute target qubits to front
-        axes = self.targets + [i for i in range(n) if i not in self.targets]
-        permuted = np.transpose(state_tensor, axes)
-        permuted = permuted.reshape(2 ** len(self.targets), -1)
-        applied = self.matrix @ permuted
-        applied = applied.reshape([2] * len(self.targets) + [2] * (n - len(self.targets)))
+        # Iterate through the statevector in blocks
+        for i in range(size):
 
-        # invert permutation
-        inv_axes = np.argsort(axes)
-        quantum_state.state = np.transpose(applied, inv_axes).reshape(quantum_state.dim)
+            # Only handle base indices where all target bits are 0). Avoids doing blocks more than once.
+            if any(i & b for b in target_bits):
+                continue
+
+            # Compute over combinations of k target qubits. 2^k total. Can probably parallelise here.
+            indices = []
+            for mask in range(1 << k):
+                j = i # start from base index
+
+                # iterate over target qubits
+                for bit_idx in range(k):
+
+                    # check if target qubit should be set to 1 in this combination
+                    if mask & (1 << bit_idx):
+
+                        # bitwise OR to set qubit
+                        j |= target_bits[bit_idx]
+
+                # add j to one of 2^k indices the block represents
+                indices.append(j)
+
+            # Extract target amplitudes
+            block = np.array([state[j] for j in indices])
+
+            # apply gate
+            new_block = self.matrix @ block
+
+            # overwrite statevector amplitudes
+            for j, val in zip(indices, new_block):
+                state[j] = val
+
+        quantum_state.state = state
