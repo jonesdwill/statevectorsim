@@ -2,8 +2,12 @@ import numpy as np
 from statevectorsim import QuantumState, QuantumCircuit, QuantumGate
 from statevectorsim.utils import *
 
+# -------------------------------------------------
+#               Gate Test Utility
+# -------------------------------------------------
+
 def assert_gate(gate, expected_targets, expected_dim, expected_matrix=None):
-    """Utility function for common assertions on a QuantumGate object."""
+    """ Utility function for common assertions on a QuantumGate object. """
     assert isinstance(gate, QuantumGate), f"Result is not a QuantumGate object: {gate}"
     assert gate.targets == expected_targets, f"Targets mismatch: Expected {expected_targets}, got {gate.targets}"
     assert gate.matrix.shape == (expected_dim,
@@ -15,6 +19,7 @@ def assert_gate(gate, expected_targets, expected_dim, expected_matrix=None):
 
 
 def test_single_gates():
+    """ Function to test all single qubit gates """
     print("--- Testing Single Qubit Gates (X, Y, Z, H, I) ---")
 
     # Matrices for comparison
@@ -25,7 +30,7 @@ def test_single_gates():
     H_mat = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
 
     # Test single qubit
-    assert_gate(QuantumGate.i(5), [5], 2, I_mat)
+    assert_gate(QuantumGate.i(5)[0], [5], 2, I_mat)
     assert_gate(QuantumGate.x(0)[0], [0], 2, X_mat)
     assert_gate(QuantumGate.y(1)[0], [1], 2, Y_mat)
     assert_gate(QuantumGate.z(2)[0], [2], 2, Z_mat)
@@ -116,24 +121,25 @@ def test_controlled_rotation_gates():
 def test_multi_controlled_gates():
     print("--- Testing Multi-Controlled Gates (CCX, MCX, MCY, MCZ) ---")
 
-    # 1. CCX (3-qubit, targets [c1, c2, t])
+    # CCX (3-qubit, targets [c1, c2, t])
+    ccx_gate = QuantumGate.mcx([0, 1], 2)
     CCX_mat = np.eye(8, dtype=complex)
     CCX_mat[6:8, 6:8] = [[0, 1], [1, 0]]
-    assert_gate(QuantumGate.ccx(0, 1, 2), [0, 1, 2], 8, CCX_mat)
+    assert_gate(ccx_gate, [0, 1, 2], 8, CCX_mat)
 
-    # 2. MCX (4-qubit, targets [c1, c2, c3, t])
+    # MCX (4-qubit, targets [c1, c2, c3, t])
     mcx_gate = QuantumGate.mcx([0, 1, 2], 3)
     MCX_mat = np.eye(16, dtype=complex)
     MCX_mat[14:16, 14:16] = [[0, 1], [1, 0]]  # Swaps |1110> (14) and |1111> (15)
     assert_gate(mcx_gate, [0, 1, 2, 3], 16, MCX_mat)
 
-    # 3. MCY (4-qubit, targets [c1, c2, c3, t])
+    # MCY (4-qubit, targets [c1, c2, c3, t])
     mcy_gate = QuantumGate.mcy([4, 5, 6], 7)
     MCY_mat = np.eye(16, dtype=complex)
     MCY_mat[14:16, 14:16] = [[0, -1j], [1j, 0]]  # Applies Y to |1110> and |1111> block
     assert_gate(mcy_gate, [4, 5, 6, 7], 16, MCY_mat)
 
-    # 4. MCZ (3-qubit, targets [c1, c2, t])
+    # MCZ (3-qubit, targets [c1, c2, t])
     mcz_gate = QuantumGate.mcz([8, 9], 10)
     MCZ_mat = np.eye(8, dtype=complex)
     MCZ_mat[7, 7] = -1  # Phase flip on |111> (index 7)
@@ -149,85 +155,21 @@ def run_circuit_test(title: str, n_qubits: int, circuit: QuantumCircuit):
     print("=" * 70)
     print(f"RUNNING CIRCUIT TEST: {title} ({n_qubits} Qubits)")
 
-    # 1. Initialize the state to |0...0>
+    # Initialize the state to |0...0>
     state = QuantumState(n_qubits)  # Initializes to |0>^N
     # Assuming .state is the correct attribute based on the previous fix attempt
     print(f"Initial State Vector:\n{state.state}")
 
-    # 2. Run the circuit
+    # Run the circuit
     print("\nApplying Gates...")
     final_state = circuit.run(state)
 
-    # Check again just in case the method behavior changes depending on the circuit
-    if final_state is None:
-        print("\nFATAL ERROR: QuantumCircuit.run() returned None.")
-        return
-
-    # 3. Print Final State Vector (FIX: Use print() directly instead of .to_string())
+    # Print Final State Vector
     print("\n--- Final State Vector (Amplitudes) ---")
-    print(final_state)  # This calls the object's __str__ method.
+    print(final_state)
 
-    # 4. Visualize the Resulting State on Bloch Spheres
+    # Visualize the Resulting State on Bloch Spheres
     plot_bloch_spheres(final_state.state)
-
-
-def example_bell_state():
-    """Circuit to create the maximally entangled Bell state |Phi+> = 1/sqrt(2)(|00> + |11>)."""
-    n_qubits = 2
-    qc = QuantumCircuit(n_qubits)
-
-    # 1. Apply Hadamard to Qubit 1 (creates superposition)
-    qc.add_gate(QuantumGate.h(1))
-
-    # 2. Apply CNOT with Control=1, Target=0 (creates entanglement)
-    qc.add_gate(QuantumGate.cx(1, 0))  # Targets [control, target]
-
-    run_circuit_test(
-        title="Bell State |Phi+> (Entangled)",
-        n_qubits=n_qubits,
-        circuit=qc
-    )
-
-
-def example_superposition_and_rotation():
-    """Circuit to show a qubit moved to the equator and rotated around Z."""
-    n_qubits = 1
-    qc = QuantumCircuit(n_qubits)
-
-    # 1. Apply Hadamard: |0> -> |+> (Vector points to +X)
-    qc.add_gate(QuantumGate.h(0))
-
-    # 2. Apply Rz(pi/2): Rotates the state by 90 degrees around the Z-axis.
-    # The state should move from the +X axis towards the +Y axis.
-    qc.add_gate(QuantumGate.rz(0, math.pi / 2))
-
-    run_circuit_test(
-        title="Superposition -> Rz Rotation (Qubit 0: +X to +Y)",
-        n_qubits=n_qubits,
-        circuit=qc
-    )
-
-
-def example_mixed_separable():
-    """Circuit to show a 3-qubit state where Q0 is |1>, Q1 is |->, and Q2 is |+>."""
-    n_qubits = 3
-    qc = QuantumCircuit(n_qubits)
-
-    # Qubit 0: |0> -> X -> |1> (Vector points to -Z)
-    qc.add_gate(QuantumGate.x(0))
-
-    # Qubit 1: |0> -> H -> |+> -> Z -> |-> (Vector points to -X)
-    qc.add_gate(QuantumGate.h(1))
-    qc.add_gate(QuantumGate.z(1))
-
-    # Qubit 2: |0> -> H -> |+> (Vector points to +X)
-    qc.add_gate(QuantumGate.h(2))
-
-    run_circuit_test(
-        title="3-Qubit Separable State (|1>|->|+>)",
-        n_qubits=n_qubits,
-        circuit=qc
-    )
 
 def main():
     try:
@@ -242,8 +184,3 @@ def main():
         print(f"\nTEST FAILED: {e}")
     except Exception as e:
         print(f"\nAn unexpected error occurred during testing: {e}")
-
-    # Run the visualization tests
-    example_superposition_and_rotation()
-    example_bell_state()
-    example_mixed_separable()

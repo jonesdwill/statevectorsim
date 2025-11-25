@@ -6,7 +6,7 @@ from typing import List, Dict, Union
 
 def single_qubit_bloch_vector(state, qubit_index):
     """
-    Compute the Bloch vector (x, y, z) for a specific qubit in a multi-qubit state.
+    Compute qubit's Bloch vector (x, y, z) in a multi-qubit state.
     """
     n_qubits = int(np.log2(len(state)))
     state_tensor = state.reshape([2] * n_qubits)
@@ -27,12 +27,7 @@ def single_qubit_bloch_vector(state, qubit_index):
 
 def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
     """
-    Bloch sphere plot with:
-    - X, Y, Z equators
-    - |0⟩ and |1⟩ labels
-    - No axis arrows
-    - No grid
-    - Minimal clean aesthetic
+    Bloch sphere plot for multi-qubit state, given a statevector. Plots multiple bloch spheres.
     """
 
     n_qubits = int(np.log2(len(state)))
@@ -49,7 +44,7 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
     ys = np.outer(np.sin(u), np.sin(v))
     zs = np.outer(np.ones_like(u), np.cos(v))
 
-    # Equators
+    # equators for plotting
     eq_u = np.linspace(0, 2*np.pi, 200)
     eq_zero = np.zeros_like(eq_u)
 
@@ -68,13 +63,17 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
     eq3_y = np.cos(eq_u)
     eq3_z = np.sin(eq_u)
 
+    # loop over qubits
     for q in range(n_qubits):
 
+        # get bloch vector
         vec = single_qubit_bloch_vector(state, q)
 
+        # create subplot
         ax = fig.add_subplot(n_rows, n_cols, q+1, projection='3d')
 
-        # Sphere surface
+        # --- plotting ---
+        # sphere surface
         ax.plot_surface(
             xs, ys, zs,
             rstride=1, cstride=1,
@@ -82,27 +81,28 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
             edgecolor="gray", linewidth=0.3
         )
 
-        ax.plot(eq_x, eq_y, eq_z, color='black', linewidth=0.6)   # XY equator
-        ax.plot(eq2_x, eq2_y, eq2_z, color='black', linewidth=0.6) # XZ equator
-        ax.plot(eq3_x, eq3_y, eq3_z, color='black', linewidth=0.6) # YZ equator
+        # plot equators
+        ax.plot(eq_x, eq_y, eq_z, color='black', linewidth=0.6)
+        ax.plot(eq2_x, eq2_y, eq2_z, color='black', linewidth=0.6)
+        ax.plot(eq3_x, eq3_y, eq3_z, color='black', linewidth=0.6)
 
-        ax.plot([-1, 1], [0, 0], [0, 0], color="black", linewidth=0.8)  # X-axis
-        ax.plot([0, 0], [-1, 1], [0, 0], color="black", linewidth=0.8)  # Y-axis
-        ax.plot([0, 0], [0, 0], [-1, 1], color="black", linewidth=0.8)  # Z-axis
+        # plot axis
+        ax.plot([-1, 1], [0, 0], [0, 0], color="black", linewidth=0.8)
+        ax.plot([0, 0], [-1, 1], [0, 0], color="black", linewidth=0.8)
+        ax.plot([0, 0], [0, 0], [-1, 1], color="black", linewidth=0.8)
 
-        # plot vector
+        # plot bloch-vector
         ax.quiver(
-            0, 0, 0,  # start at origin
-            vec[0], vec[1], vec[2],  # vector components
+            0, 0, 0,
+            vec[0], vec[1], vec[2],
             color='blue',
             linewidth=2,
             arrow_length_ratio=0.2,
-            linestyle='-',  # solid line
+            linestyle='-',
             alpha=0.9
         )
 
-        ## --- LABEL & FORMAT ---
-        # Inside your loop over qubits:
+        ## --- compute amplitudes for labelling ---
         n_qubits = int(np.log2(len(state)))
         state_tensor = state.reshape([2] * n_qubits)
 
@@ -111,12 +111,13 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
         rho = np.tensordot(state_tensor, np.conj(state_tensor),
                            axes=(axes_to_trace, axes_to_trace))
 
-        # Compute amplitudes for labeling
+        # amplitudes
         alpha = np.sqrt(np.real(rho[0, 0]))
         beta = np.sqrt(np.real(rho[1, 1]))
         phase = np.angle(rho[0, 1])
         beta = beta * np.exp(1j * phase)
 
+        ## --- label ---
         title_str = f"Qubit {q}\n$|\\psi\\rangle = {alpha:.2f}|0\\rangle + {abs(beta):.2f}|1\\rangle$"
         ax.set_title(title_str, fontsize=10)
 
@@ -128,6 +129,7 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
         ax.text(0, label_offset, 0, 'Y', ha='center', va='center', fontsize=10)
         ax.text(0, 0, label_offset, 'Z', ha='center', va='center', fontsize=10)
 
+        # --- format ---
         ax.set_box_aspect([1, 1, 1])
 
         ax.set_xticks([]); ax.set_yticks([]); ax.set_zticks([])
@@ -148,26 +150,25 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
 
 
 def statevector_to_dataframe(state: np.ndarray, little_endian=True):
-    """
-    Convert a statevector to a pandas DataFrame.
-    Little-endian (default) means qubit 0 = LSB (rightmost bit).
+    """ Convert a statevector to a pandas DataFrame. Little-endian (default). """
 
-    Returns a DataFrame with columns: Index, State, Amplitude
-    """
+    # get num qubits from state
     n = int(np.log2(len(state)))
 
+    # index qubits
     indices = np.arange(len(state))
 
-    # Binary strings for basis states
+    # create binary strings for basis states
     if little_endian:
         states = [f"|{i:0{n}b}>" for i in indices]
     else:
-        # Big-endian: reverse bits
+        # big-endian: reverse bits
         states = [f"|{format(i, f'0{n}b')[::-1]}>" for i in indices]
 
-    # Format amplitudes
+    # format amplitudes
     amplitudes = [f"{amp.real:.4f}{'+' if amp.imag >= 0 else '-'}{abs(amp.imag):.4f}j" for amp in state]
 
+    # create dataframe
     df = pd.DataFrame({
         "Index": indices,
         "State": states,
@@ -178,35 +179,38 @@ def statevector_to_dataframe(state: np.ndarray, little_endian=True):
 
 
 def plot_histogram(results: Dict[str, int], shots: int):
-    """
-    Generates and displays a probability histogram from measurement results.
-    """
+    """ Generates probability histogram from multi-shot measurement results. """
+
     if not results:
         print("No results to plot.")
         return
 
-    # Sort keys for consistent plotting order (e.g., '00', '01', '10', '11')
+    # --- results ---
+    # sort keys for consistent plotting order (e.g., '00', '01', '10', '11')
     outcomes = sorted(results.keys())
+
+    # get counts and compute probabilities
     counts = [results.get(o, 0) for o in outcomes]
     probabilities = [c / shots for c in counts]
 
-    # Create plot
+    # create plot
     plt.figure(figsize=(8, 5))
     bars = plt.bar(outcomes, probabilities, alpha=0.7)
 
-    # Add title and labels
+    # --- label ---
     plt.title(f'Histogram of Monte-Carlo Simulation ({shots} Shots)', fontsize=14)
     plt.xlabel('Measurement Outcome', fontsize=12)
     plt.ylabel('Probability', fontsize=12)
 
-    # Set y-axis limits and show a grid
-    plt.ylim(0, max(probabilities) * 1.1 or 1.0)
-    plt.grid(axis='y', linestyle='--', alpha=0.6)
-
-    # Add probability text labels on top of the bars
+    # probability text labels
     for bar in bars:
         y_val = bar.get_height()
         plt.text(bar.get_x() + bar.get_width() / 2, y_val + 0.01,
                  f'{y_val:.3f}', ha='center', va='bottom')
+
+    # --- format ---
+    plt.ylim(0, max(probabilities) * 1.1 or 1.0)
+    plt.grid(axis='y', linestyle='--', alpha=0.6)
+
 
     plt.show()

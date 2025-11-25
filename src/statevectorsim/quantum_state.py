@@ -20,7 +20,7 @@ class QuantumState:
 
 
     def copy(self) -> 'QuantumState':
-        """ Creates a copy of the state for multi-shot runs. """
+        """ Copy state for multi-shot runs. """
         new_state = self.__class__(self.n)
         new_state.state = self.state.copy()
         return new_state
@@ -37,7 +37,7 @@ class QuantumState:
         p0 = np.sum(np.abs(self.state[indices_0]) ** 2)
         p1 = 1 - p0
 
-        # Ensure probabilities are clipped to [0, 1] due to possible floating point errors
+        # Ensure probabilities are clipped to [0, 1] - reduce floating point errors
         probabilities = np.clip([p0, p1], 0.0, 1.0)
         probabilities /= np.sum(probabilities)
         outcome = np.random.choice([0, 1], p=probabilities)
@@ -53,8 +53,10 @@ class QuantumState:
 
         return outcome
 
+
     def measure_all(self):
-        """Measure all qubits in the computational basis."""
+        """Measure all qubits in computational basis."""
+
         # probabilities
         probability_vector = np.abs(self.state) ** 2
 
