@@ -123,7 +123,7 @@ class QuantumGate:
 
 
     # -------------------------------------
-    #           Standard Gates
+    #    Standard Gates (X, Y, Z, H, I)
     # -------------------------------------
 
     @staticmethod
@@ -156,10 +156,43 @@ class QuantumGate:
         matrix = np.eye(2, dtype=complex)
         return QuantumGate._create_single_gates(targets, matrix)
 
+    # -------------------------------------
+    #     Phase Gates (S, T, Sdag, Tdag)
+    # -------------------------------------
+
+    @staticmethod
+    def s(targets: Union[int, List[int]]):
+        """Phase gate (S-gate, sqrt(Z)). Equivalent to Rz(pi/2)."""
+        # Matrix: [[1, 0], [0, i]]
+        matrix = np.array([[1, 0], [0, 1j]], dtype=complex)
+        return QuantumGate._create_single_gates(targets, matrix)
+
+    @staticmethod
+    def sdg(targets: Union[int, List[int]]):
+        """Inverse Phase gate (S-dagger). Equivalent to Rz(-pi/2)."""
+        # Matrix: [[1, 0], [0, -i]]
+        matrix = np.array([[1, 0], [0, -1j]], dtype=complex)
+        return QuantumGate._create_single_gates(targets, matrix)
+
+    @staticmethod
+    def t(targets: Union[int, List[int]]):
+        """T-gate. Equivalent to Rz(pi/4)."""
+        # Matrix: [[1, 0], [0, exp(i*pi/4)]]
+        phase = np.exp(1j * math.pi / 4)
+        matrix = np.array([[1, 0], [0, phase]], dtype=complex)
+        return QuantumGate._create_single_gates(targets, matrix)
+
+    @staticmethod
+    def tdg(targets: Union[int, List[int]]):
+        """Inverse T-gate (T-dagger). Equivalent to Rz(-pi/4)."""
+        # Matrix: [[1, 0], [0, exp(-i*pi/4)]]
+        phase = np.exp(-1j * math.pi / 4)
+        matrix = np.array([[1, 0], [0, phase]], dtype=complex)
+        return QuantumGate._create_single_gates(targets, matrix)
 
 
     # -------------------------------------
-    #           Rotation Gates
+    #      Rotation Gates (RX, RY, RZ)
     # -------------------------------------
 
     @staticmethod
@@ -193,7 +226,7 @@ class QuantumGate:
 
 
     # -------------------------------------
-    #           Controlled Gates
+    #  Controlled Gates (CX, CY, CZ, SWAP)
     # -------------------------------------
 
     @staticmethod
@@ -203,6 +236,12 @@ class QuantumGate:
                            [0, 1, 0, 0],
                            [0, 0, 0, 1],
                            [0, 0, 1, 0]], dtype=complex)
+        return QuantumGate._create_controlled_gate(control, target, matrix)
+
+    @staticmethod
+    def cy(control: int, target: int):
+        """Controlled-y gate (2 qubits) - Applies y if both qubits are |1>"""
+        matrix = np.array([[0, -1j], [1j, 0]], dtype=complex)
         return QuantumGate._create_controlled_gate(control, target, matrix)
 
     @staticmethod
@@ -223,9 +262,9 @@ class QuantumGate:
 
 
 
-    # -------------------------------------
-    #      Controlled Rotation Gates
-    # -------------------------------------
+    # ----------------------------------------------
+    #    Controlled Rotation Gates (CRX, CRY, CRZ)
+    # ----------------------------------------------
 
     @staticmethod
     def crx(control: int, target: int, theta: float) -> 'QuantumGate':
@@ -289,9 +328,9 @@ class QuantumGate:
 
 
 
-    # -------------------------------------
-    #   Multi-Controlled (N-qubit) Gates
-    # -------------------------------------
+    # -----------------------------------------
+    #   Multi-Controlled Gates (MCX, MCY, MCZ)
+    # -----------------------------------------
 
     @staticmethod
     def mcx(controls: List[int], target: int):
