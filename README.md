@@ -77,10 +77,10 @@ The `QuantumGate` class includes an array of static methods for constructing com
 
 The `QuantumCircuit` class includes static methods to quickly generate common n-qubit circuits.
 
-| Circuit Name   | Method Signature        | Number of Qubits     | Description                                                  |
-|:---------------|:------------------------|:---------------------|:-------------------------------------------------------------|
-| **Bell State** | `QuantumCircuit.bell()` | 2                    | Creates the Bell state $(\|0\rangle + \|1\rangle)/ \sqrt{2}$ |
-| **GHZ State**  | `QuantumCircuit.ghz()`  | $\geq 2$ (default 3) | Creates the $n$-qubit Greenberger–Horne–Zeilinger state.     |  
+| Circuit Name   | Method Signature        | Number of Qubits     | Description                                                                                              |
+|:---------------|:------------------------|:---------------------|:---------------------------------------------------------------------------------------------------------|
+| **Bell State** | `QuantumCircuit.bell()` | 2                    | Creates the Bell state $(\|0\rangle + \|1\rangle)/ \sqrt{2}$                                             |
+| **GHZ State**  | `QuantumCircuit.ghz()`  | $\geq 2$ (default 3) | Creates the $n$-qubit Greenberger–Horne–Zeilinger state $(\|00..00\rangle + \|11..11\rangle)/ \sqrt{2}$. |  
 
 ## License
 
