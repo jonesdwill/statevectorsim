@@ -330,7 +330,6 @@ def test_qpe_s_gate():
 
     print(circuit_to_ascii(qpe_circuit))
 
-    print("-" * 70)
     print(f"Expected Phase: {expected_phi:.4f}")
     print(f"Estimated Phase (k / 2^t): {estimated_phi:.4f}")
     print(f"QPE Test PASSED: {is_correct}")
@@ -371,7 +370,6 @@ def test_qpe_t_gate():
 
     print(circuit_to_ascii(qpe_circuit))
 
-    print("-" * 70)
     print(f"Expected Phase: {expected_phi:.4f}")
     print(f"Estimated Phase (k / 2^t): {estimated_phi:.4f}")
     print(f"QPE Test PASSED: {is_correct}")
@@ -412,7 +410,6 @@ def test_qpe_approx_pi_3():
 
     print(circuit_to_ascii(qpe_circuit))
 
-    print("-" * 70)
     print(f"True Phase: {expected_phi:.5f}")
     print(f"Estimated Phase (k / 2^t): {estimated_phi:.5f}")
     print(f"QPE Test PASSED: {is_correct} (Closest fraction is {int(estimated_phi * (2 ** t_qubits))}/{2 ** t_qubits})")
@@ -467,7 +464,6 @@ def test_grover_search(n_qubits: int = 3, marked_index: int = 5):
 
     print(circuit_to_ascii(grover_qc))
 
-    print("-" * 70)
     print(f"Target State: |{marked_state_str}> (Index {marked_index})")
     print(f"Theoretical Max Probability: {expected_prob:.4f}")
     print(f"Simulated Probability: {marked_prob:.4f}")
