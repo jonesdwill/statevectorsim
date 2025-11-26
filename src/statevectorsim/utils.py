@@ -237,3 +237,104 @@ def format_statevector(state: np.ndarray) -> str:
             output.append(f"|{basis_state}> {amplitude_str}")
 
     return "\n".join(output)
+
+
+def circuit_to_ascii(circuit: 'QuantumCircuit', initial_state_label: str = '|0>') -> str:
+    """
+    Generates an ASCII/text representation of the quantum circuit.
+    """
+    n_qubits = circuit.n
+    if n_qubits == 0:
+        return "Empty circuit."
+
+    # Initialize the circuit diagram structure: a list of strings, one for each qubit.
+    label_width = len(f"q{n_qubits-1}: {initial_state_label}")
+    lines = [f"q{i}: {initial_state_label}".ljust(label_width) + "---" for i in range(n_qubits)]
+
+    # Starting point after the initial label
+    initial_offset = label_width + 3
+
+    qubit_last_gate_end = [initial_offset] * n_qubits
+
+    # --- Configuration for Gate Display ---
+    GATE_TOTAL_WIDTH = 3
+
+    for gate in circuit.gates:
+        gate_name = gate.name.split(' ')[0].upper()
+
+        # Clean up rotation gates (e.g., 'RZ(0.785)' -> 'RZ')
+        if gate_name.startswith('R') and '(' in gate_name:
+            display_name = gate_name.split('(')[0]
+        else:
+            display_name = gate_name
+
+        # Truncate
+        display_name = display_name[:3]
+
+        # Identify Control and Target Qubits
+        target_qubits = gate.targets
+
+        control_qubits = []
+        active_target = None
+
+        # all but the last target are controls
+        if display_name in ['CX', 'CY', 'CZ', 'CS', 'CRX', 'CRY', 'CRZ', 'CCX', 'MCX', 'MCY', 'MCZ']:
+            if len(target_qubits) >= 2:
+                control_qubits = sorted(target_qubits[:-1])
+                active_target = target_qubits[-1]
+            elif len(target_qubits) == 1:
+                active_target = target_qubits[0]
+        else:
+            # all targets are active targets
+            active_target = target_qubits[0] if target_qubits else None
+
+        qubits_involved = sorted(list(set(target_qubits)))
+        if not qubits_involved: continue # Skip if no targets
+
+        min_qubit = qubits_involved[0]
+        max_qubit = qubits_involved[-1]
+
+        start_col = max(qubit_last_gate_end[q] for q in qubits_involved) + 1
+
+        # --- Draw Gate ---
+        for q in range(n_qubits):
+
+            padding = start_col - len(lines[q])
+            if padding > 0:
+                 lines[q] += "-" * padding
+
+            drawn_segment = ""
+
+            if q in control_qubits:
+                # Control dot, padded to 3 chars: -@-
+                drawn_segment = "-*-"
+
+            elif (active_target is not None and q == active_target) or (active_target is None and q in target_qubits):
+                # Main Gate Box, CNOT Target, or SWAP Target
+
+                is_cnot_target = display_name in ['CX', 'CY', 'CZ', 'CCX', 'MCX', 'MCY', 'MCZ']
+                is_swap_target = display_name == 'SWAP'
+
+                if is_cnot_target or is_swap_target:
+                    # Target (X) for CNOT/Toffoli/etc. or SWAP cross, padded to 3 chars: -X-
+                    drawn_segment = "-X-"
+                else:
+                    box_content = display_name.center(3)
+                    drawn_segment = f"{box_content}" # e.g. '[ H ]'
+
+            elif min_qubit <= q <= max_qubit:
+                # Vertical connector line, padded to 5 chars: --|--
+                drawn_segment = "-|-"
+
+            else:
+                # Wire for non-involved qubits
+                drawn_segment = "-" * GATE_TOTAL_WIDTH
+
+            lines[q] += drawn_segment
+
+            # 5. Update Column Tracking
+            # The next gate starts after the current gate block, which is GATE_TOTAL_WIDTH long.
+            qubit_last_gate_end[q] = start_col + GATE_TOTAL_WIDTH
+
+    # Combine all lines into the final output string
+    return "\n".join(lines)

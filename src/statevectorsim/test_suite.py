@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from statevectorsim import QuantumState, QuantumCircuit, QuantumGate
-from statevectorsim.utils import plot_bloch_spheres, format_statevector
+from statevectorsim.utils import plot_bloch_spheres, format_statevector, circuit_to_ascii
 from numpy import testing
 
 # ==============================================================================
@@ -35,30 +35,6 @@ def run_test_and_plot(title: str, circuit: QuantumCircuit, target_qubits: list[i
 
     print("-" * 70)
 
-
-# def run_circuit_test(title: str, n_qubits: int, circuit: QuantumCircuit):
-#     """
-#     Initializes a QuantumState, runs the circuit, and visualizes the result.
-#     """
-#     print("=" * 70)
-#     print(f"RUNNING CIRCUIT TEST: {title} ({n_qubits} Qubits)")
-#
-#     # Initialize the state to |0...0>
-#     state = QuantumState(n_qubits)  # Initializes to |0>^N
-#     # Assuming .state is the correct attribute based on the previous fix attempt
-#     print(f"Initial State Vector:\n{state.state}")
-#
-#     # Run the circuit
-#     print("\nApplying Gates...")
-#     final_state = circuit.run(state)
-#
-#     # Print Final State Vector
-#     print("\n--- Final State Vector (Amplitudes) ---")
-#     # Display the state vector using the utility function
-#     print(format_statevector(final_state.statevector()))
-#
-#     # Visualize the Resulting State on Bloch Spheres
-#     plot_bloch_spheres(final_state.statevector(), max_cols=n_qubits)
 
 # ==============================================================================
 #                      Single-Qubit Gate Tests (1 Qubit)
@@ -139,6 +115,8 @@ def test_bell_state_cx():
     qc.add_gate(QuantumGate.h(0))    # |00> -> (|00> + |10>)/sqrt(2)
     qc.add_gate(QuantumGate.cx(0, 1)) # -> (|00> + |11>)/sqrt(2) (Bell state)
 
+    print(circuit_to_ascii(qc))
+
     # Entangled state should have both qubits in a mixed state (vector at center)
     run_test_and_plot("11. Bell State (|Φ+>) using H & CX (Q0=C, Q1=T)", qc, target_qubits=[0, 1])
 
@@ -149,6 +127,8 @@ def test_cz_gate():
     qc.add_gate(QuantumGate.cx(0, 1)) # CX(0, 1) -> |Φ+>
     qc.add_gate(QuantumGate.cz(0, 1)) # CZ(|Φ+>) = |Ψ-> = (|00>-|11>)/sqrt(2)
 
+    print(circuit_to_ascii(qc))
+
     run_test_and_plot("12. CZ Gate on Bell State (Still entangled)", qc, target_qubits=[0, 1])
 
 def test_swap_gate():
@@ -158,6 +138,8 @@ def test_swap_gate():
     qc.add_gate(QuantumGate.x(1))
     # Apply SWAP(0, 1) to get |10>
     qc.add_gate(QuantumGate.swap(0, 1))
+
+    print(circuit_to_ascii(qc))
 
     # Qubit 0 should now be |1> (down) and Qubit 1 should be |0> (up)
     run_test_and_plot("13. SWAP Gate: |01> -> |10>", qc, target_qubits=[0, 1])
@@ -262,6 +244,8 @@ def test_qft_decomposition(n_qubits: int, initial_index: int):
     # Run the circuit
     final_state = qft_circuit.run(initial_state)
 
+    print(circuit_to_ascii(qft_circuit))
+
     # Define the expected output state (analytical result)
     expected_state = np.zeros(2**n_qubits, dtype=complex)
     N = 2**n_qubits
@@ -344,6 +328,8 @@ def test_qpe_s_gate():
     expected_phi = 0.25
     is_correct = np.isclose(estimated_phi, expected_phi)
 
+    print(circuit_to_ascii(qpe_circuit))
+
     print("-" * 70)
     print(f"Expected Phase: {expected_phi:.4f}")
     print(f"Estimated Phase (k / 2^t): {estimated_phi:.4f}")
@@ -382,6 +368,8 @@ def test_qpe_t_gate():
 
     # expect k=2 for t=4 (2/16 = 0.125)
     is_correct = np.isclose(estimated_phi, expected_phi)
+
+    print(circuit_to_ascii(qpe_circuit))
 
     print("-" * 70)
     print(f"Expected Phase: {expected_phi:.4f}")
@@ -422,6 +410,8 @@ def test_qpe_approx_pi_3():
     # The true value is 0.33333. test for close approximation.
     is_correct = np.isclose(estimated_phi, expected_phi, atol=0.01)  # Check within 1% error
 
+    print(circuit_to_ascii(qpe_circuit))
+
     print("-" * 70)
     print(f"True Phase: {expected_phi:.5f}")
     print(f"Estimated Phase (k / 2^t): {estimated_phi:.5f}")
@@ -456,25 +446,26 @@ def test_grover_search(n_qubits: int = 3, marked_index: int = 5):
     theta = math.asin(1 / math.sqrt(N))
     expected_prob = math.sin( (2 * R + 1) * theta ) ** 2
 
-    # 1. Build the Grover Circuit
+    # Build circ
     grover_qc = QuantumCircuit.grover_search(
         n_qubits=n_qubits,
         marked_state_index=marked_index
     )
 
-    # 2. Run Simulation
+    # Run Sim
     initial_state = QuantumState(n_qubits) # Starts at |0...0>
     print(f"Optimal Grover iterations (R): {R}")
     print(f"Applying {len(grover_qc.gates)} Gates to {n_qubits}-qubit state...")
     grover_qc.run(initial_state)
 
-    # 3. Analyze Results (check probability of the marked state)
     probabilities = initial_state.get_probabilities()
     marked_prob = probabilities[marked_index]
 
     # The probability should be very close to the theoretical max.
     TOLERANCE = 0.02
     is_correct = np.isclose(marked_prob, expected_prob, atol=TOLERANCE)
+
+    print(circuit_to_ascii(grover_qc))
 
     print("-" * 70)
     print(f"Target State: |{marked_state_str}> (Index {marked_index})")
@@ -532,6 +523,8 @@ def test_qft_adder(A: int, B: int, n_bits: int, tolerance: float = 1e-6):
     # Check success condition:
     correct_prob = abs(sv[final_index])**2
     passed = correct_prob > (1 - tolerance)
+
+    print(circuit_to_ascii(qc))
 
     if passed:
         print(f"PASSED: Correct result index {final_index} with prob={correct_prob:.4f}")
