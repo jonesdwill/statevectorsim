@@ -3,9 +3,9 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![PyPI version](https://img.shields.io/badge/version-0.1.0-blue)
 
-A lightweight, quantum state-vector simulator, written in Python. Features a smart backend that
-switches between dense (NumPy) and sparse (SciPy CSR) matrix representations. Includes optimised circuit compilation, noise modelling via Monte Carlo methods, and built-in implementations of 
-major quantum algorithms. Can efficiently handle up to 26-qubit circuits, though this is dependent on the memory you have available and circuit sparsity. After this memory scaling becomes too large.
+A lightweight, quantum state-vector simulator, written in Python. This package includes a backend that
+switches between dense (NumPy) and sparse (SciPy CSR) matrix representations, optimised circuit compilation, noise modelling via Monte Carlo methods, and built-in implementations of 
+major quantum algorithms. Generally, it can efficiently handle up to 26-qubit circuits, though this is dependent on the memory you have available and circuit sparsity. After this memory scaling becomes too large.
 
 ---
 
@@ -38,7 +38,7 @@ major quantum algorithms. Can efficiently handle up to 26-qubit circuits, though
 
 ### statevectorsim package:
 * **`QuantumState`**: State manager supporting dense and sparse statevector representations. Handles initialisation, basis-state preparation, and measurement collapse.
-* **`QuantumGate`**: Comprehensive library of standard, rotational, controlled, and multi-controlled gates. Gate application logic using **Tensor Slicing** (dense) and **Bitmasking** (sparse).
+* **`QuantumGate`**: Comprehensive library of standard, rotational, controlled, and multi-controlled gates. Gate application logic using Tensor Slicing (dense) and Bitmasking (sparse).
 * **`QuantumCircuit`**: Build, optimise, and run circuits. Includes:
     * **Compiler**: Basic gate fusion (V1) and commutative 'lookahead' gate fusion (V2).
     * **Algorithm Library**: Pre-built circuits for Shor's Algorithm, Grover's Search, QPE, QFT, and Quantum Adders.
