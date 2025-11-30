@@ -87,7 +87,15 @@ class QuantumGate:
         # Qubit Order and Permutation
         active_qubits = set(self.targets) | set(self.controls)
         non_active_qubits = sorted([i for i in range(N) if i not in active_qubits])
-        new_order = sorted(self.targets) + sorted(self.controls) + non_active_qubits
+
+        # Targets (LSBs of the active block)
+        reversed_targets = list(reversed(self.targets))
+
+        # Controls (MSBs of the active block)
+        reversed_controls = list(reversed(self.controls))
+
+        # [Targets(LSB..MSB), Controls(LSB..MSB), NonActive]
+        new_order = reversed_targets + reversed_controls + non_active_qubits
 
         original_order = list(range(N))
 
@@ -112,6 +120,8 @@ class QuantumGate:
 
         # Embed G_active into the Full Permuted Space ('U')
         I_non_active = identity(2 ** len(non_active_qubits), dtype=complex, format='csr')
+
+        # kron(A, B) -> A is MSB, B is LSB.
         U_prime = kron(I_non_active, G_active, format='csr')
 
         # Inverse Permutation

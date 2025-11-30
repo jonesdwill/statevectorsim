@@ -12,8 +12,8 @@ class QuantumBackend:
 
     def __init__(self):
         # Heuristic thresholds
-        self.DENSE_QUBIT_LIMIT = 14  # Below this, Dense is almost always faster
-        self.SPARSE_CROSSOVER = 20  # Above this, Dense usually runs out of RAM
+        self.HARD_DENSE_LIMIT = 7
+        self.HARD_SPARSE_LIMIT = 20
 
         # Gates that destroy sparsity rapidly
         self.SCRAMBLING_GATES = {'h', 'rx', 'ry', 'qft'}
@@ -21,38 +21,59 @@ class QuantumBackend:
         # Default mode, will be overwritten by analysis
         self.mode = 'tbd'
 
-    def analyze_mode(self, circuit: QuantumCircuit) -> str:
+    def _estimate_sparsity(self, circuit: QuantumCircuit) -> float:
         """
-        Determines best simulation mode (dense/sparse) and sets self.mode.
-        Public method to allow pre-analysis before execution loops.
+        Estimates the fraction of non-zero states in the final vector.
         """
         n = circuit.n
+        current_active_paths = 1.0
+        max_paths = 2.0 ** n
 
-        # Small circuits -> Dense
-        if n <= self.DENSE_QUBIT_LIMIT:
-            self.mode = 'dense'
-            return 'dense'
+        touched_qubits = set()
 
-        # Large circuits -> Sparse (to avoid MemoryError)
-        if n >= self.SPARSE_CROSSOVER:
-            self.mode = 'sparse'
-            return 'sparse'
-
-        #Medium circuits -> Check structure
-        scramble_score = 0
-        total_gates = len(circuit.gates)
+        branching_gates = {'h', 'rx', 'ry', 'crx', 'cry', 'qft'}
 
         for gate in circuit.gates:
             name = gate.name.lower().split('(')[0]
-            if name in self.SCRAMBLING_GATES:
-                scramble_score += 1
 
-        if total_gates > 0 and (scramble_score / total_gates) > 0.2:
+            # Track qubits involved in branching/superposition
+            if name in branching_gates:
+                current_active_paths *= 2.0
+                touched_qubits.update(gate.targets)
+                if gate.controls: touched_qubits.update(gate.controls)
+
+            # Can't exceed total Hilbert space (max_paths)
+            # Can't exceed subspace of touched qubits (2^len(touched))
+            saturation_limit = 2.0 ** len(touched_qubits)
+            current_active_paths = min(current_active_paths, max_paths, saturation_limit)
+
+            # If density > 20%, it is Dense.
+            if (current_active_paths / max_paths) > 0.2:
+                return 0.25
+
+        return current_active_paths / max_paths
+
+    def analyze_mode(self, circuit: QuantumCircuit) -> str:
+        """
+        Decides simulation mode based on N and Estimated Sparsity.
+        """
+        n = circuit.n
+
+        if n >= self.HARD_SPARSE_LIMIT:
+            self.mode = 'sparse'
+            return 'sparse'
+
+        sparsity_score = self._estimate_sparsity(circuit)
+
+        is_dense_enough = sparsity_score > 0.15
+        is_small_enough = n < self.HARD_DENSE_LIMIT + 1
+
+        if is_small_enough and is_dense_enough:
             self.mode = 'dense'
-            return 'dense'
+        else:
+            self.mode = 'sparse'
 
-        self.mode = 'sparse'
-        return 'sparse'
+        return self.mode
 
     def optimise_circuit(self, circuit: QuantumCircuit, noise_model: Optional[NoiseModel] = None) -> QuantumCircuit:
         """

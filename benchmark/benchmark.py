@@ -1,601 +1,430 @@
 import matplotlib.pyplot as plt
-import time  # Ensure time is imported
-
-from statevectorsim import QuantumState, QuantumCircuit, QuantumGate
-from statevectorsim.quantum_backend import QuantumBackend
-from typing import List, Tuple, Dict
+import time
 import numpy as np
 import math
+from typing import List, Tuple, Dict, Callable
+
+from src.statevectorsim import QuantumState, QuantumCircuit, QuantumGate
+from src.statevectorsim.quantum_backend import QuantumBackend
+from src.statevectorsim.utils import create_random_circuit
 
 # Qiskit Imports
-from qiskit.circuit.library import QFT as qiskit_qft
-from qiskit import QuantumCircuit as QiskitCircuit
-from qiskit import transpile  # Added for optimization
-from qiskit.quantum_info import Statevector
-from qiskit.circuit.library import PhaseEstimation
-from qiskit.circuit.library import ZGate
+try:
+    from qiskit import QuantumCircuit as QiskitCircuit, transpile
+    from qiskit.quantum_info import Statevector
+    from qiskit.circuit.library import QFT as qiskit_qft, PhaseEstimation, ZGate, YGate
+except ImportError:
+    print("WARNING: Qiskit not found. Qiskit benchmarks will fail.")
 
+# ======================================================
+#              HELPER FUNCTIONS
+# ======================================================
 
-def plot_benchmarks(results: Dict[str, List[Tuple[int, float]]], shots: int, circuit_title: str):
+def plot_benchmarks(
+        results: Dict[str, List[Tuple[int, float]]],
+        shots: int,
+        circuit_title: str,
+        cutoff_time: float = None
+):
     """
     Generates a matplotlib plot of simulation time vs. number of qubits.
     """
-
     all_n = []
     for data in results.values():
         all_n.extend([d[0] for d in data])
-    max_qubits = max(all_n) if all_n else 0
 
-    plt.figure(figsize=(10, 6))
+    if not all_n:
+        print("No data to plot.")
+        return
 
-    # Extended labels and colors for optimization variants + Hybrid + Qiskit Opt
+    max_qubits = max(all_n)
+    min_qubits = min(all_n)
+
+    plt.figure(figsize=(12, 7))
+
+    # --- Plot Cutoff Line ---
+    if cutoff_time:
+        plt.axhline(
+            y=cutoff_time,
+            color='black',
+            linestyle='--',
+            linewidth=2.0,
+            label=f'Time Limit ({cutoff_time}s)',
+            zorder=10,
+            alpha=0.9
+        )
+
+    # --- Styles ---
     labels = {
-        'dense': 'Dense',
-        'dense_opt': 'Dense (Optimised)',
-        'sparse': 'Sparse',
-        'sparse_opt': 'Sparse (Optimised)',
-        'hybrid': 'Hybrid (Auto-Select)',
-        'qiskit_aer': r"IBM's Qiskit Statevector",
-        'qiskit_opt': r"IBM's Qiskit Statevector (L3 Opt)"
+        'dense': 'Dense', 'dense_opt_v1': 'Dense (v1 opt))', 'dense_opt_v2': 'Dense (v2 opt)',
+        'sparse': 'Sparse', 'sparse_opt_v1': 'Sparse (v1 opt)', 'sparse_opt_v2': 'Sparse (v2 opt)',
+        'hybrid': 'Hybrid (Smart Backend)',
+        'qiskit_aer': r"IBM's Qiskit Statevector", 'qiskit_opt': r"IBM's Qiskit Statevector (L3 Opt)"
     }
-
     styles = {
-        'dense': 'o-',
-        'dense_opt': 's--',
-        'sparse': 'x-',
-        'sparse_opt': '^--',
-        'hybrid': '*-',
-        'qiskit_aer': 'd-',
-        'qiskit_opt': 'd--'
+        'dense': 's-', 'dense_opt_v1': 's--', 'dense_opt_v2': 's:',
+        'sparse': 'x-', 'sparse_opt_v1': 'x--', 'sparse_opt_v2': 'x:',
+        'hybrid': 'd-', 'qiskit_aer': 'd-', 'qiskit_opt': 'd--'
     }
-
     colours = {
-        'dense': 'red',
-        'dense_opt': 'red',
-        'sparse': 'green',
-        'sparse_opt': 'green',
-        'hybrid': 'blue',
-        'qiskit_aer': 'purple',
-        'qiskit_opt': 'purple'
+        'dense': 'red', 'dense_opt_v1': 'red', 'dense_opt_v2': 'red',
+        'sparse': 'green', 'sparse_opt_v1': 'green', 'sparse_opt_v2': 'green',
+        'hybrid': 'blue', 'qiskit_aer': 'purple', 'qiskit_opt': 'purple'
     }
 
     for method, data in results.items():
-        if not data:
-            continue
-
+        if not data: continue
         n_qubits = [d[0] for d in data]
         times = [d[1] for d in data]
 
-        style = styles.get(method, method)
+        # Fallback for custom method names
+        style = styles.get(method, 'o--')
         label = labels.get(method, method)
-        colour = colours.get(method, method)
+        colour = colours.get(method, 'gray')
 
-        plt.plot(n_qubits, times, style, label=label, color=colour)
+        plt.plot(n_qubits, times, style, label=label, color=colour, markersize=6)
 
     plt.title(f'{circuit_title} Benchmark Comparison: Up to {max_qubits} Qubits, Avg over {shots} Shots')
     plt.xlabel('Number of Qubits (n)')
     plt.ylabel('Average Simulation Time (seconds) - Log Scale')
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, linestyle='--', alpha=0.3)
 
     if all_n:
-        plt.xticks(sorted(list(set(all_n))))
+        unique_n = sorted(list(set(all_n)))
+        if len(unique_n) > 20:
+            plt.xticks(np.arange(min_qubits, max_qubits + 1, 2))
+        else:
+            plt.xticks(unique_n)
 
     plt.yscale('log')
+    # Auto-adjust ylim to make sure cutoff line is visible
+    if cutoff_time:
+        current_ymin, current_ymax = plt.ylim()
+        plt.ylim(current_ymin, max(current_ymax, cutoff_time * 1.5))
+
     plt.tight_layout()
-    plt.savefig(f'{circuit_title}_benchmark.png')
+    plt.savefig(f'{circuit_title.replace(" ", "_")}_benchmark.png')
+    plt.show()
+
+def _calculate_cleaned_average(times: List[float], trim_percent: float = 0.15) -> float:
+    """Helper to remove outliers and return mean."""
+    if not times: return 0.0
+    if len(times) < 5: return sum(times) / len(times)
+
+    sorted_times = sorted(times)
+    trim_count = int(len(times) * trim_percent)
+
+    if trim_count > 0:
+        clean = sorted_times[trim_count: -trim_count]
+    else:
+        clean = sorted_times
+
+    if not clean: clean = sorted_times
+    return sum(clean) / len(clean)
 
 
-# --- Benchmarking Logic ----
+def _convert_to_qiskit(custom_qc: QuantumCircuit) -> QiskitCircuit:
+    """ Translates a custom QuantumCircuit into a Qiskit QuantumCircuit. """
+    qiskit_qc = QiskitCircuit(custom_qc.n)
+
+    for gate in custom_qc.gates:
+        name = gate.name.lower();
+        t = gate.targets;
+        c = gate.controls
+        try:
+            # Single Qubit
+            if name == 'h':
+                qiskit_qc.h(t[0])
+            elif name == 'x':
+                qiskit_qc.x(t[0])
+            elif name == 'y':
+                qiskit_qc.y(t[0])
+            elif name == 'z':
+                qiskit_qc.z(t[0])
+            elif name == 's':
+                qiskit_qc.s(t[0])
+            elif name == 'sdg':
+                qiskit_qc.sdg(t[0])
+            elif name == 't':
+                qiskit_qc.t(t[0])
+            elif name == 'tdg':
+                qiskit_qc.tdg(t[0])
+
+            # Parametric
+            elif 'rx' in name:
+                qiskit_qc.rx(float(name.split('(')[1].split(')')[0]), t[0])
+            elif 'ry' in name:
+                qiskit_qc.ry(float(name.split('(')[1].split(')')[0]), t[0])
+            elif 'rz' in name:
+                qiskit_qc.rz(float(name.split('(')[1].split(')')[0]), t[0])
+
+            # Two Qubit
+            elif name == 'cx':
+                qiskit_qc.cx(c[0], t[0])
+            elif name == 'cy':
+                qiskit_qc.cy(c[0], t[0])
+            elif name == 'cz':
+                qiskit_qc.cz(c[0], t[0])
+            elif name == 'swap':
+                qiskit_qc.swap(t[0], t[1])
+
+            # Controlled Parametric
+            elif 'crp' in name or 'cp' in name:
+                qiskit_qc.cp(float(name.split('(')[1].split(')')[0]), c[0], t[0])
+            elif 'crx' in name:
+                qiskit_qc.crx(float(name.split('(')[1].split(')')[0]), c[0], t[0])
+            elif 'cry' in name:
+                qiskit_qc.cry(float(name.split('(')[1].split(')')[0]), c[0], t[0])
+            elif 'crz' in name:
+                qiskit_qc.crz(float(name.split('(')[1].split(')')[0]), c[0], t[0])
+
+            # Multi-Control
+            elif 'mcx' in name:
+                qiskit_qc.mcx(c, t[0])
+            elif 'mcy' in name:
+                qiskit_qc.append(YGate().control(len(c)), c + t)
+            elif 'mcz' in name:
+                qiskit_qc.append(ZGate().control(len(c)), c + t)
+        except:
+            pass
+    return qiskit_qc
+
 
 # ======================================================
-#                          QFT
+#                 ENGINE
 # ======================================================
 
-def generate_qft_circuit(n_qubits: int) -> QuantumCircuit:
+def run_benchmark_engine(
+        qubit_range: List[int],
+        circuit_factory: Callable[[int], QuantumCircuit],
+        methods: List[str],
+        shots: int,
+        time_limit: float = 0.1,
+        cached: bool = False,  # True for QFT/GHZ, False for Random
+        title: str = "Benchmark"
+) -> Dict[str, List[Tuple[int, float]]]:
     """
-    Generates custom QFT circuit (QuantumCircuit.qft).
+    Universal benchmarking function.
     """
-    return QuantumCircuit.qft(n_qubits, swap_endian=True, inverse=False)
-
-
-def benchmark_qft(qubit_range: List[int], shots: int, methods_to_run: List[str]) -> Dict[str, List[Tuple[int, float]]]:
-    """
-    Benchmarks the QFT circuit. Supports 'hybrid', '_opt' suffix, and 'qiskit_opt'.
-    """
-    results: Dict[str, List[Tuple[int, float]]] = {}
-    for method in methods_to_run:
-        results[method] = []
-
-    # Initialize hybrid backend once (if needed)
+    results = {m: [] for m in methods}
     hybrid_backend = QuantumBackend()
+    active_methods = set(methods)
+    run_qiskit = any('qiskit' in m for m in methods)
 
     for n in qubit_range:
+        print(f"\n--- {title} on {n} Qubits ---")
+        if not active_methods:
+            print("All methods timed out. Stopping early.")
+            break
 
-        print(f"\n--- Benchmarking QFT on {n} Qubits (State Space: 2^{n}={2 ** n}) ---")
+        # Data storage for outlier cleaning
+        raw_times = {m: [] for m in methods}
 
-        # build base local circuit simulator
-        base_qc = generate_qft_circuit(n)
+        # --- PRE-COMPILATION (Cached Only) ---
+        static_qc = None
+        static_qiskit_raw = None
+        static_qiskit_opt = None
+        static_hybrid = None
+        static_dense_opt = {}
 
-        # --- Iterative Benchmarking ---
-        for method in methods_to_run:
+        if cached:
+            try:
+                static_qc = circuit_factory(n)
 
-            # --- Benchmark 'Qiskit Statevector' (Standard) ---
-            if method == 'qiskit_aer':
-                total_time_aer = 0.0
-                try:
-                    qiskit_qft_qc = QiskitCircuit(n)
-                    qiskit_qft_qc.append(qiskit_qft(n, do_swaps=True), range(n))
+                # Qiskit
+                if run_qiskit:
+                    try:
+                        q_temp = _convert_to_qiskit(static_qc)
+                        static_qiskit_raw = q_temp
+                        static_qiskit_opt = transpile(q_temp, optimization_level=3)
+                    except:
+                        pass
 
-                    for i in range(shots):
-                        start_time = time.time()
-                        _ = Statevector.from_instruction(qiskit_qft_qc)
-                        end_time = time.time()
-                        total_time_aer += (end_time - start_time)
+                # Hybrid
+                if 'hybrid' in methods:
+                    static_hybrid = hybrid_backend.optimise_circuit(static_qc)
+                    hybrid_backend.analyze_mode(static_qc)
 
-                    avg_time_aer = total_time_aer / shots
-                    results['qiskit_aer'].append((n, avg_time_aer))
-                    print(f"Qiskit Statevector: Avg time over {shots} shots: {avg_time_aer:.6f} s")
+                # Dense/Sparse Opt
+                for m in methods:
+                    if '_opt' in m and 'qiskit' not in m:
+                        strategy = 'v1' if 'v1' in m else 'v2'
+                        qc_copy = static_qc.copy()
+                        qc_copy.optimise(method=strategy)
+                        static_dense_opt[m] = qc_copy
 
-                except Exception as e:
-                    print(f"WARNING: Qiskit Statevector benchmark failed for N={n}. Error: {e}")
+            except Exception as e:
+                print(f"Error building static circuit for N={n}: {e}")
+                continue
 
-            # --- Benchmark 'Qiskit Opt'  ---
-            elif method == 'qiskit_opt':
-                total_time_opt = 0.0
-                try:
-                    qiskit_qft_qc = QiskitCircuit(n)
-                    qiskit_qft_qc.append(qiskit_qft(n, do_swaps=True), range(n))
-                    transpiled_qc = transpile(qiskit_qft_qc, optimization_level=3)
+        # --- SHOT LOOP ---
+        for _ in range(shots):
 
-                    for i in range(shots):
-                        start_time = time.time()
-                        _ = Statevector.from_instruction(transpiled_qc)
-                        end_time = time.time()
-                        total_time_opt += (end_time - start_time)
-
-                    avg_time_opt = total_time_opt / shots
-                    results['qiskit_opt'].append((n, avg_time_opt))
-                    print(f"Qiskit (L3 Opt): Avg time over {shots} shots: {avg_time_opt:.6f} s")
-
-                except Exception as e:
-                    print(f"WARNING: Qiskit Opt benchmark failed for N={n}. Error: {e}")
-
-            # --- Benchmark 'Hybrid' (QuantumBackend) ---
-            elif method == 'hybrid':
-                total_time = 0.0
-
-                # compile
-                compiled_qc = hybrid_backend.optimise_circuit(base_qc)
-                hybrid_backend.analyze_mode(base_qc)
-
-                try:
-                    for i in range(shots):
-                        state_to_run = QuantumState(n)
-                        state_to_run.basis_state(0)  # |0>
-
-                        start_time = time.time()
-                        hybrid_backend.execute(compiled_qc, initial_state=state_to_run, shots=1, inplace=True)
-                        end_time = time.time()
-                        total_time += (end_time - start_time)
-
-                    avg_time = total_time / shots
-                    results['hybrid'].append((n, avg_time))
-                    print(f"Hybrid Backend: Avg time over {shots} shots: {avg_time:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Hybrid benchmark failed for N={n}. Error: {e}")
-
-            # --- Benchmark 'dense', 'sparse', 'dense_opt', 'sparse_opt' ---
+            # 1. GET CIRCUIT
+            if cached:
+                current_qc = static_qc
             else:
-                use_opt = False
-                actual_mode = method
-                if method.endswith('_opt'):
-                    use_opt = True
-                    actual_mode = method.replace('_opt', '')
+                current_qc = circuit_factory(n)
 
-                qc_to_run = base_qc.copy()
-                if use_opt:
-                    qc_to_run.optimise()
+            # 2. QISKIT SETUP (Dynamic Only)
+            q_raw = static_qiskit_raw
+            if not cached and run_qiskit and any('qiskit' in m for m in active_methods):
+                try:
+                    q_raw = _convert_to_qiskit(current_qc)
+                except:
+                    pass
 
-                total_time = 0.0
-                for i in range(shots):
-                    state_to_run = QuantumState(n, mode=actual_mode)
-                    state_to_run.basis_state(0)
+            # 3. RUN METHODS
+            for method in list(active_methods):
+                try:
+                    t_start = time.time()
 
-                    if actual_mode == 'sparse':
-                        state_to_run.to_sparse()
+                    # --- Qiskit ---
+                    if method == 'qiskit_aer' and q_raw:
+                        _ = Statevector.from_instruction(q_raw)
 
-                    start_time = time.time()
-                    qc_to_run.run(state_to_run, method=actual_mode)
-                    end_time = time.time()
-                    total_time += (end_time - start_time)
+                    elif method == 'qiskit_opt' and (q_raw or static_qiskit_opt):
+                        if cached:
+                            _ = Statevector.from_instruction(static_qiskit_opt)
+                        elif q_raw:
+                            # For random, we usually TIME execution only, assuming compile is separate step
+                            t_prog = transpile(q_raw, optimization_level=3)
+                            t_start = time.time()
+                            _ = Statevector.from_instruction(t_prog)
 
-                avg_time = total_time / shots
-                results[method].append((n, avg_time))
-                print(f"{method.capitalize()}: Avg time over {shots} shots: {avg_time:.6f} s")
+                    # --- Hybrid ---
+                    elif method == 'hybrid':
+                        qc_to_run = static_hybrid if cached else hybrid_backend.optimise_circuit(current_qc)
+                        if not cached: hybrid_backend.analyze_mode(current_qc)
+
+                        st = QuantumState(current_qc.n);
+                        st.basis_state(0)
+
+                        t_start = time.time()
+                        hybrid_backend.execute(qc_to_run, st, shots=1, inplace=True)
+
+                    # --- Dense / Sparse ---
+                    else:
+                        mode = 'sparse' if method.startswith('sparse') else 'dense'
+
+                        if cached and method in static_dense_opt:
+                            qc_to_run = static_dense_opt[method]
+                        elif not cached and ('_opt' in method):
+                            strat = 'v1' if 'v1' in method else 'v2'
+                            qc_to_run = current_qc.copy()
+                            qc_to_run.optimise(method=strat)
+                        else:
+                            qc_to_run = current_qc
+
+                        st = QuantumState(current_qc.n, mode=mode)
+                        if mode == 'sparse': st.to_sparse()
+                        st.basis_state(0)
+
+                        t_start = time.time()
+                        qc_to_run.run(st, method=mode)
+
+                    # Record Time
+                    raw_times[method].append(time.time() - t_start)
+
+                except Exception:
+                    pass
+
+        # --- PROCESS RESULTS ---
+        for method in list(active_methods):
+            avg = _calculate_cleaned_average(raw_times[method])
+            if avg > 0:
+                results[method].append((n, avg))
+                print(f"{method}: {avg:.6f} s")
+                if avg > time_limit:
+                    print(f"  -> CUTOFF: {method} > limit. Dropping.")
+                    active_methods.remove(method)
 
     return results
 
 
 # ======================================================
-#                          QPE
+#            FACTORIES TO BENCHMARK
 # ======================================================
 
-def generate_qpe_circuit(n_estimation: int) -> QuantumCircuit:
-    z_matrix = np.array([[1, 0], [0, -1]], dtype=complex)
-    target_qubit_index = n_estimation
-    target_initial_state_gates = [QuantumGate.x(target_qubit_index)]
+def qft_factory(n):
+    return QuantumCircuit.qft(n, swap_endian=True)
 
-    return QuantumCircuit.qpe(
-        t_qubits=n_estimation,
-        unitary_matrix=z_matrix,
-        m_qubits=1,
-        target_initial_state_gates=target_initial_state_gates
+def random_factory(n):
+    return create_random_circuit(n, depth=50, bias_factor=0.3)
+
+def ghz_factory(n):
+    return QuantumCircuit.ghz(n)
+
+def grover_factory(n):
+    marked = 2 ** (n - 1)
+    return QuantumCircuit.grover_search(n, marked)
+
+def qpe_factory(n):
+    z_mat = np.array([[1, 0], [0, -1]], dtype=complex)
+    return QuantumCircuit.qpe(n, z_mat, m_qubits=1, target_initial_state_gates=[QuantumGate.x(n)])
+
+def shors_factory(n: int) -> QuantumCircuit:
+    # Map n_qubits -> (Number to factor N, guess a)
+    cases = {
+        12: (15, 7),  # 4 bits (15) * 3 = 12 qubits
+        15: (21, 2),  # 5 bits (21) * 3 = 15 qubits
+        18: (33, 5),  # 6 bits (33) * 3 = 18 qubits (35 is also 6 bits)
+        21: (65, 2)  # 7 bits (65) * 3 = 21 qubits
+    }
+
+    if n not in cases:
+        raise ValueError(f"No Shor case defined for n={n}. Valid keys: {list(cases.keys())}")
+
+    N_val, a_val = cases[n]
+    return QuantumCircuit.shors(N_val, a_val)
+
+# ======================================================
+#               MAIN EXECUTION BLOCK
+# ======================================================
+
+if __name__ == "__main__":
+    # Global Config
+    METHODS = [
+        'dense', 'dense_opt_v2',
+        'sparse', 'sparse_opt_v2',
+        'hybrid',
+        'qiskit_aer', 'qiskit_opt'
+    ]
+    SHOTS = 20
+    LIMIT = 0.2  # Cutoff time (seconds)
+
+    # --- 1. Random Circuit ---
+    res_rand = run_benchmark_engine(list(range(2, 16)), random_factory, METHODS, SHOTS, LIMIT, cached=False, title="Random Circuit")
+    plot_benchmarks(res_rand, SHOTS, "Random Circuit", LIMIT)
+
+    # --- 2. QFT ---
+    res_qft = run_benchmark_engine(list(range(2, 16)), qft_factory, METHODS, SHOTS, LIMIT, cached=True, title="QFT")
+    plot_benchmarks(res_qft, SHOTS, "QFT", LIMIT)
+
+    # --- 3. Grover ---
+    res_grover = run_benchmark_engine(list(range(2, 14)), grover_factory, METHODS, SHOTS, LIMIT, cached=True,title="Grover")
+    plot_benchmarks(res_grover, SHOTS, "Grover", LIMIT)
+
+    # --- 4. QPE ---
+    res_qpe = run_benchmark_engine(list(range(2, 12)), qpe_factory, METHODS, SHOTS, LIMIT, cached=True, title="QPE")
+    plot_benchmarks(res_qpe, SHOTS, "QPE", LIMIT)
+
+    # --- 5. GHZ ---
+    res_ghz = run_benchmark_engine(list(range(2, 22)), ghz_factory, METHODS, SHOTS, LIMIT, cached=True, title="GHZ State")
+    plot_benchmarks(res_ghz, SHOTS, "GHZ", LIMIT)
+
+    # --- 6. Shors ---
+    SHORS_RANGE = [12, 15, 18]
+
+    res_shors = run_benchmark_engine(
+        SHORS_RANGE,
+        shors_factory,
+        METHODS,
+        shots=5,
+        time_limit=LIMIT,
+        cached=True,
+        title="Shor's Algorithm"
     )
 
-
-def benchmark_qpe(qubit_range: List[int], shots: int, methods_to_run: List[str]) -> Dict[str, List[Tuple[int, float]]]:
-    """
-    Benchmarks the QPE circuit. Supports 'hybrid', '_opt', and 'qiskit_opt'.
-    """
-    results: Dict[str, List[Tuple[int, float]]] = {}
-    for method in methods_to_run:
-        results[method] = []
-
-    hybrid_backend = QuantumBackend()
-
-    for n in qubit_range:
-        n_total = n + 1  # n estimation qubits + 1 target qubit
-        print(f"\n--- Benchmarking QPE on {n} Estimation Qubits ({n_total} Total Qubits) ---")
-
-        base_qc = generate_qpe_circuit(n)
-
-        for method in methods_to_run:
-
-            if method == 'qiskit_aer':
-                total_time_aer = 0.0
-                try:
-                    qiskit_qpe_qc = QiskitCircuit(n_total)
-                    qiskit_qpe_qc.append(PhaseEstimation(n, ZGate()), range(n_total))
-                    qiskit_qpe_qc.x(n)
-
-                    for i in range(shots):
-                        start_time = time.time()
-                        _ = Statevector.from_instruction(qiskit_qpe_qc)
-                        end_time = time.time()
-                        total_time_aer += (end_time - start_time)
-
-                    avg_time_aer = total_time_aer / shots
-                    results['qiskit_aer'].append((n, avg_time_aer))
-                    print(f"Qiskit Statevector: Avg time over {shots} shots: {avg_time_aer:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Qiskit Statevector benchmark failed for N={n}. Error: {e}")
-
-            elif method == 'qiskit_opt':
-                total_time_opt = 0.0
-                try:
-                    qiskit_qpe_qc = QiskitCircuit(n_total)
-                    qiskit_qpe_qc.append(PhaseEstimation(n, ZGate()), range(n_total))
-                    qiskit_qpe_qc.x(n)
-                    transpiled_qc = transpile(qiskit_qpe_qc, optimization_level=3)
-
-                    for i in range(shots):
-                        start_time = time.time()
-                        _ = Statevector.from_instruction(transpiled_qc)
-                        end_time = time.time()
-                        total_time_opt += (end_time - start_time)
-
-                    avg_time_opt = total_time_opt / shots
-                    results['qiskit_opt'].append((n, avg_time_opt))
-                    print(f"Qiskit (L3 Opt): Avg time over {shots} shots: {avg_time_opt:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Qiskit Opt benchmark failed for N={n}. Error: {e}")
-
-            elif method == 'hybrid':
-                total_time = 0.0
-
-                # Pre-compile
-                compiled_qc = hybrid_backend.optimise_circuit(base_qc)
-                hybrid_backend.analyze_mode(base_qc)
-
-                try:
-                    for i in range(shots):
-                        state_to_run = QuantumState(n_total)
-                        state_to_run.basis_state(0)
-
-                        start_time = time.time()
-                        hybrid_backend.execute(compiled_qc, initial_state=state_to_run, shots=1, inplace=True)
-                        end_time = time.time()
-                        total_time += (end_time - start_time)
-                    avg_time = total_time / shots
-                    results['hybrid'].append((n, avg_time))
-                    print(f"Hybrid Backend: Avg time over {shots} shots: {avg_time:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Hybrid benchmark failed for N={n}. Error: {e}")
-
-            else:
-                use_opt = False
-                actual_mode = method
-                if method.endswith('_opt'):
-                    use_opt = True
-                    actual_mode = method.replace('_opt', '')
-
-                qc_to_run = base_qc.copy()
-                if use_opt:
-                    qc_to_run.optimise()
-
-                total_time = 0.0
-                for i in range(shots):
-                    state_to_run = QuantumState(n_total, mode=actual_mode)
-                    state_to_run.basis_state(0)
-                    if actual_mode == 'sparse':
-                        state_to_run.to_sparse()
-
-                    start_time = time.time()
-                    qc_to_run.run(state_to_run, method=actual_mode)
-                    end_time = time.time()
-                    total_time += (end_time - start_time)
-
-                avg_time = total_time / shots
-                results[method].append((n, avg_time))
-                print(f"{method.capitalize()}: Avg time over {shots} shots: {avg_time:.6f} s")
-
-    return results
-
-
-# ======================================================
-#                         GROVERS
-# ======================================================
-
-def _build_qiskit_grover(n_qubits: int, marked_index: int, iterations: int) -> QiskitCircuit:
-    """ Helper to build a Qiskit circuit matching custom Grover implementation. """
-    qc = QiskitCircuit(n_qubits)
-    qubits = list(range(n_qubits))
-    qc.h(qubits)
-    bin_str = format(marked_index, f'0{n_qubits}b')
-
-    for _ in range(iterations):
-        for q in qubits:
-            if bin_str[n_qubits - 1 - q] == '0':
-                qc.x(q)
-        if n_qubits > 1:
-            qc.h(n_qubits - 1)
-            qc.mcx(list(range(n_qubits - 1)), n_qubits - 1)
-            qc.h(n_qubits - 1)
-        else:
-            qc.z(0)
-        for q in qubits:
-            if bin_str[n_qubits - 1 - q] == '0':
-                qc.x(q)
-        qc.h(qubits)
-        qc.x(qubits)
-        if n_qubits > 1:
-            qc.h(n_qubits - 1)
-            qc.mcx(list(range(n_qubits - 1)), n_qubits - 1)
-            qc.h(n_qubits - 1)
-        else:
-            qc.z(0)
-        qc.x(qubits)
-        qc.h(qubits)
-    return qc
-
-
-def benchmark_grover(qubit_range: List[int], shots: int, methods_to_run: List[str]) -> Dict[
-    str, List[Tuple[int, float]]]:
-    """
-    Benchmarks Grover's Search Algorithm. Supports 'hybrid', '_opt', and 'qiskit_opt'.
-    """
-    results: Dict[str, List[Tuple[int, float]]] = {}
-    for method in methods_to_run:
-        results[method] = []
-
-    hybrid_backend = QuantumBackend()
-
-    for n in qubit_range:
-        print(f"\n--- Benchmarking Grover's Search on {n} Qubits ---")
-
-        marked_index = int('10' * (n // 2) + '1' * (n % 2), 2)
-        N = 2 ** n
-        R = round(math.pi / 4 * math.sqrt(N))
-        print(f"Target Index: {marked_index}, Iterations: {R}")
-
-        base_qc = QuantumCircuit.grover_search(n, marked_index)
-
-        for method in methods_to_run:
-
-            if method == 'qiskit_aer':
-                total_time_aer = 0.0
-                try:
-                    qiskit_qc = _build_qiskit_grover(n, marked_index, R)
-                    for _ in range(shots):
-                        start_time = time.time()
-                        _ = Statevector.from_instruction(qiskit_qc)
-                        total_time_aer += (time.time() - start_time)
-                    avg_time_aer = total_time_aer / shots
-                    results['qiskit_aer'].append((n, avg_time_aer))
-                    print(f"Qiskit Statevector: Avg time over {shots} shots: {avg_time_aer:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Qiskit benchmark failed for N={n}. Error: {e}")
-
-            elif method == 'qiskit_opt':
-                total_time_opt = 0.0
-                try:
-                    qiskit_qc = _build_qiskit_grover(n, marked_index, R)
-                    transpiled_qc = transpile(qiskit_qc, optimization_level=3)
-
-                    for _ in range(shots):
-                        start_time = time.time()
-                        _ = Statevector.from_instruction(transpiled_qc)
-                        total_time_opt += (time.time() - start_time)
-                    avg_time_opt = total_time_opt / shots
-                    results['qiskit_opt'].append((n, avg_time_opt))
-                    print(f"Qiskit (L3 Opt): Avg time over {shots} shots: {avg_time_opt:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Qiskit Opt benchmark failed for N={n}. Error: {e}")
-
-            elif method == 'hybrid':
-                total_time = 0.0
-
-                compiled_qc = hybrid_backend.optimise_circuit(base_qc)
-                hybrid_backend.analyze_mode(base_qc)
-
-                try:
-                    for _ in range(shots):
-                        state_to_run = QuantumState(n)
-                        state_to_run.basis_state(0)
-
-                        start_time = time.time()
-                        hybrid_backend.execute(compiled_qc, initial_state=state_to_run, shots=1, inplace=True)
-                        end_time = time.time()
-                        total_time += (end_time - start_time)
-                    avg_time = total_time / shots
-                    results['hybrid'].append((n, avg_time))
-                    print(f"Hybrid Backend: Avg time over {shots} shots: {avg_time:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Hybrid benchmark failed for N={n}. Error: {e}")
-
-            else:
-                use_opt = False
-                actual_mode = method
-                if method.endswith('_opt'):
-                    use_opt = True
-                    actual_mode = method.replace('_opt', '')
-
-                qc_to_run = base_qc.copy()
-                if use_opt:
-                    qc_to_run.optimise()
-
-                total_time = 0.0
-                for _ in range(shots):
-                    state_to_run = QuantumState(n, mode=actual_mode)
-                    if actual_mode == 'sparse':
-                        state_to_run.to_sparse()
-
-                    start_time = time.time()
-                    qc_to_run.run(state_to_run, method=actual_mode)
-                    end_time = time.time()
-                    total_time += (end_time - start_time)
-
-                avg_time = total_time / shots
-                results[method].append((n, avg_time))
-                print(f"{method.capitalize()}: Avg time over {shots} shots: {avg_time:.6f} s")
-
-    return results
-
-
-# ======================================================
-#                          GHZ
-# ======================================================
-
-def generate_ghz_circuit(n_qubits: int) -> QuantumCircuit:
-    """ Generates a GHZ state circuit. """
-    qc = QuantumCircuit(n_qubits)
-    qc.add_gate(QuantumGate.h(0))
-    for i in range(n_qubits - 1):
-        qc.add_gate(QuantumGate.cx(i, i + 1))
-    return qc
-
-
-def benchmark_ghz_circuit(qubit_range: List[int], shots: int, methods_to_run: List[str]) -> Dict[
-    str, List[Tuple[int, float]]]:
-    """
-    Benchmarks the GHZ circuit. Supports 'hybrid', '_opt', and 'qiskit_opt'.
-    """
-    results: Dict[str, List[Tuple[int, float]]] = {}
-    for method in methods_to_run:
-        results[method] = []
-
-    hybrid_backend = QuantumBackend()
-
-    for n in qubit_range:
-        print(f"\n--- Benchmarking GHZ (Sparse Advantage) on {n} Qubits ---")
-
-        base_qc = generate_ghz_circuit(n)
-
-        for method in methods_to_run:
-            if method == 'qiskit_aer':
-                try:
-                    qiskit_qc = QiskitCircuit(n)
-                    qiskit_qc.h(0)
-                    for i in range(n - 1):
-                        qiskit_qc.cx(i, i + 1)
-
-                    total_time = 0.0
-                    for _ in range(shots):
-                        start = time.time()
-                        _ = Statevector.from_instruction(qiskit_qc)
-                        total_time += (time.time() - start)
-
-                    avg_time = total_time / shots
-                    results['qiskit_aer'].append((n, avg_time))
-                    print(f"Qiskit: Avg time: {avg_time:.6f} s")
-                except Exception as e:
-                    print(f"Qiskit failed for N={n}: {e}")
-
-            elif method == 'qiskit_opt':
-                try:
-                    qiskit_qc = QiskitCircuit(n)
-                    qiskit_qc.h(0)
-                    for i in range(n - 1):
-                        qiskit_qc.cx(i, i + 1)
-                    transpiled_qc = transpile(qiskit_qc, optimization_level=3)
-                    total_time = 0.0
-                    for _ in range(shots):
-                        start = time.time()
-
-                        _ = Statevector.from_instruction(transpiled_qc)
-                        total_time += (time.time() - start)
-
-                    avg_time = total_time / shots
-                    results['qiskit_opt'].append((n, avg_time))
-                    print(f"Qiskit (L3 Opt): Avg time: {avg_time:.6f} s")
-                except Exception as e:
-                    print(f"Qiskit Opt failed for N={n}: {e}")
-
-            elif method == 'hybrid':
-                total_time = 0.0
-
-                compiled_qc = hybrid_backend.optimise_circuit(base_qc)
-                hybrid_backend.analyze_mode(base_qc)
-
-                try:
-                    for _ in range(shots):
-                        state_to_run = QuantumState(n)
-                        state_to_run.basis_state(0)
-
-                        start_time = time.time()
-                        hybrid_backend.execute(compiled_qc, initial_state=state_to_run, shots=1, inplace=True)
-                        total_time += (time.time() - start_time)
-
-                    avg_time = total_time / shots
-                    results['hybrid'].append((n, avg_time))
-                    print(f"Hybrid Backend: Avg time over {shots} shots: {avg_time:.6f} s")
-                except Exception as e:
-                    print(f"WARNING: Hybrid benchmark failed for N={n}. Error: {e}")
-
-            else:
-                use_opt = False
-                actual_mode = method
-                if method.endswith('_opt'):
-                    use_opt = True
-                    actual_mode = method.replace('_opt', '')
-
-                qc_to_run = base_qc.copy()
-                if use_opt:
-                    qc_to_run.optimise()
-
-                total_time = 0.0
-                for _ in range(shots):
-                    state_to_run = QuantumState(n, mode=actual_mode)
-                    if actual_mode == 'sparse':
-                        state_to_run.to_sparse()
-
-                    start_time = time.time()
-                    qc_to_run.run(state_to_run, method=actual_mode)
-                    total_time += (time.time() - start_time)
-
-                avg_time = total_time / shots
-                results[method].append((n, avg_time))
-                print(f"{method.capitalize()}: Avg time: {avg_time:.6f} s")
-
-    return results
+    plot_benchmarks(res_shors, 5, "Shor's Algorithm", LIMIT)

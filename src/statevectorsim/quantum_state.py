@@ -82,8 +82,18 @@ class QuantumState:
 
         return new_state
 
-    def clean_sparse(self):
-        """Removes all amplitudes from the sparse state that are below tolerance."""
+    def clean_sparse(self, tolerance: float = 1e-10):
+        """
+        Removes all amplitudes from the sparse state that are below tolerance.
+        Handles complex magnitudes correctly.
+        """
+        # Identify noise: values where magnitude is less than tolerance
+        mask = np.abs(self.sparse_state.data) < tolerance
+
+        # Set those values to exact zero
+        self.sparse_state.data[mask] = 0.0 + 0.0j
+
+        # Remove the explicit zeros from the sparsity structure
         self.sparse_state.eliminate_zeros()
 
     # -------------------------------------

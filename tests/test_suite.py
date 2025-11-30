@@ -1,9 +1,11 @@
 import math
+import random
 import numpy as np
 from statevectorsim import QuantumState, QuantumCircuit, QuantumGate
 from statevectorsim.quantum_noise import QuantumChannel, NoiseModel
-from statevectorsim.utils import plot_bloch_spheres, format_statevector, circuit_to_ascii
-from statevectorsim.utils import plot_histogram
+from statevectorsim.utils import plot_bloch_spheres, format_statevector, circuit_to_ascii, plot_histogram, create_random_circuit
+import time
+import matplotlib.pyplot as plt
 
 # ==============================================================================
 #                      Testing Utility Functions
@@ -23,6 +25,7 @@ def run_test_and_plot(title: str, circuit: QuantumCircuit, target_qubits: list[i
 
     # Run the circuit
     print("Applying Gates...")
+    circuit.optimise()
     circuit.run(state)
 
     # Print the resulting statevector for verification
@@ -241,6 +244,7 @@ def test_qft_decomposition(n_qubits: int, initial_index: int):
 
     # Build the QFT circuit. QFT swaps endian so reverse.
     qft_circuit = QuantumCircuit.qft(n_qubits, swap_endian=True)
+    qft_circuit.optimise()
 
     # Run the circuit
     final_state = qft_circuit.run(initial_state, method='sparse')
@@ -473,6 +477,82 @@ def test_grover_search(n_qubits: int = 3, marked_index: int = 5):
     print("-" * 70)
     print(f"Final State: {format_statevector(initial_state.state)}")
 
+# ==============================================================================
+#                      Shor's Algorithm Testing Utility
+# ==============================================================================
+
+def test_shors_algorithm(N: int = 15, a: int = 7):
+    """
+    Tests the Quantum Order-Finding subroutine of Shor's Algorithm.
+    """
+    print("\n" + "=" * 70)
+    print(f"RUNNING TEST: SHOR'S ALGORITHM (Factoring N={N}, Guess a={a})")
+
+    # Classical Checks
+    if math.gcd(a, N) != 1:
+        print(f"Skipping Quantum Step: gcd({a}, {N}) != 1. We found a factor classically: {math.gcd(a, N)}")
+        return
+
+    # Calculate theoretical period 'r' classically for validation
+    true_r = 1
+    while pow(a, true_r, N) != 1:
+        true_r += 1
+
+    print(f"Classical Pre-check: The true period of f(x) = {a}^x mod {N} is r={true_r}")
+
+    m_qubits = N.bit_length()
+    t_qubits = 2 * m_qubits
+    total_qubits = t_qubits + m_qubits
+
+    print(f"Building Circuit: {total_qubits} Qubits ({t_qubits} Counting, {m_qubits} Target)")
+    shor_qc = QuantumCircuit.shors(N, a)
+
+    initial_state = QuantumState(total_qubits)
+    print(f"Applying {len(shor_qc.gates)} Gates...")
+    shor_qc.run(initial_state)
+
+    all_bits = initial_state.measure_all()
+    measured_bits = all_bits[:t_qubits]
+
+    # Convert bits to integer
+    measured_val = 0
+    for i, bit in enumerate(measured_bits):
+        if bit: measured_val += 2**(t_qubits - 1 - i) # Treating q0 as MSB
+
+    print(f"Measured Counting Register: {measured_bits} (Int: {measured_val})")
+
+    # Continued Fractions (Classical Post-Processing)
+    phase = measured_val / (2 ** t_qubits)
+    print(f"Measured Phase: {phase:.4f}")
+
+    from fractions import Fraction
+    frac = Fraction(phase).limit_denominator(N)
+    r_guess = frac.denominator
+
+    print(f"Continued Fraction Approximation: {frac.numerator}/{frac.denominator}")
+    print(f"Quantum Guess for Period r: {r_guess}")
+
+    is_period_correct = (pow(a, r_guess, N) == 1)
+
+    factors = []
+    if r_guess % 2 != 0:
+        print("Note: r is odd, might not yield factors this run.")
+    else:
+        guess_1 = math.gcd(pow(a, r_guess // 2, N) - 1, N)
+        guess_2 = math.gcd(pow(a, r_guess // 2, N) + 1, N)
+        factors = [f for f in [guess_1, guess_2] if f != 1 and f != N]
+
+    print("-" * 30)
+    print(f"Order Found Correctly? {is_period_correct} (Expected r={true_r})")
+    if factors:
+        print(f"Success! Non-trivial factors found: {factors}")
+        print(f"Verification: {factors[0]} is a factor of {N}? {N % factors[0] == 0}")
+    else:
+        print("No non-trivial factors found this run (Algorithm is probabilistic).")
+
+    print(f"Shor's Test PASSED: {is_period_correct or (r_guess % true_r == 0)}")
+
+    print("=" * 70)
 
 # ==============================================================================
 #                      QFT ADDER Testing Utility
@@ -681,6 +761,153 @@ def test_noise_qft_iqft():
     print("-" * 70)
 
 # ==============================================================================
+#                      Optimiser Tests
+# ==============================================================================
+
+def get_fidelity(state1, state2):
+    """Calculates the fidelity between two state vectors."""
+    v1 = state1.statevector()
+    v2 = state2.statevector()
+    overlap = np.vdot(v1, v2)
+    fidelity = np.abs(overlap) ** 2
+    return fidelity
+
+def run_verification(n_trials=10):
+    print(f"Running {n_trials} verification trials...")
+    print("-" * 60)
+    print(f"{'Trial':<6} | {'Orig Gates':<10} | {'Opt Gates':<10} | {'Fidelity':<10} | {'Status'}")
+    print("-" * 60)
+
+    all_passed = True
+
+    for i in range(n_trials):
+        from src.statevectorsim.quantum_state import QuantumState
+        initial_state = QuantumState(3)
+
+        qc = create_random_circuit(n_qubits=3, depth=30)
+        qc_base = qc.copy()
+        final_state_base = qc_base.run(initial_state.copy())
+
+        qc_opt = qc.copy()
+        qc_opt.optimise()
+        final_state_opt = qc_opt.run(initial_state.copy())
+
+        fid = get_fidelity(final_state_base, final_state_opt)
+
+        is_match = abs(1.0 - fid) < 1e-9
+        status = "PASS" if is_match else "FAIL"
+        if not is_match: all_passed = False
+
+        print(f"{i+1:<6} | {len(qc_base.gates):<10} | {len(qc_opt.gates):<10} | {fid:.8f}   | {status}")
+
+    print("-" * 60)
+    if all_passed:
+        print("SUCCESS: Optimizer is mathematically lossless.")
+    else:
+        print("FAILURE: Optimizer altered the quantum state.")
+
+
+def compare_optimiser_test(n_qubits=5, runs=10):
+    depths = [10, 50, 100, 200, 500]
+
+    # Storage for averaged results
+    avg_times_vnone = []
+    avg_times_v0 = []
+    avg_times_v1 = []
+    avg_times_v2 = []
+
+    # We only care about gate count averages (though they should be consistent for copied circuits)
+    avg_counts_v1 = []
+    avg_counts_v2 = []
+
+    print(f"{'Depth':<10} | {'QC Gates':<10} | {'V0 Gates':<10} | {'V1 Gates':<10} | {'V2 Gates':<10}")
+    print("-" * 55)
+
+    for d in depths:
+        temp_times_vnone = []
+        temp_times_v0 = []
+        temp_times_v1 = []
+        temp_times_v2 = []
+
+        temp_counts_vnone = []
+        temp_counts_v0 = []
+        temp_counts_v1 = []
+        temp_counts_v2 = []
+
+        # --- Repeat for averaging ---
+        for _ in range(runs):
+            base_qc = create_random_circuit(n_qubits, depth=d)
+
+            # --- Test No Opt ---
+            qc_none = base_qc.copy()
+            start = time.perf_counter()
+            qc_none.run(QuantumState(n_qubits))
+            temp_times_vnone.append(time.perf_counter() - start)
+            temp_counts_vnone.append(len(qc_none.gates))
+
+            # --- Test V0 (Reordering only) ---
+            qc0 = base_qc.copy()
+            qc0.optimise(method='')
+            start = time.perf_counter()
+            qc0.run(QuantumState(n_qubits))
+            temp_times_v0.append(time.perf_counter() - start)
+            temp_counts_v0.append(len(qc0.gates))
+
+            # --- Test V1 (Basic Fusion) ---
+            qc1 = base_qc.copy()
+            qc1.optimise(method='v1')
+            start = time.perf_counter()
+            qc1.run(QuantumState(n_qubits))
+            temp_times_v1.append(time.perf_counter() - start)
+            temp_counts_v1.append(len(qc1.gates))
+
+            # --- Test V2 (Commute) ---
+            qc2 = base_qc.copy()
+            qc2.optimise(method='v2')
+            start = time.perf_counter()
+            qc2.run(QuantumState(n_qubits))
+            temp_times_v2.append(time.perf_counter() - start)
+            temp_counts_v2.append(len(qc2.gates))
+
+        # --- Compute Averages ---
+        avg_times_vnone.append(np.mean(temp_times_vnone))
+        avg_times_v0.append(np.mean(temp_times_v0))
+        avg_times_v1.append(np.mean(temp_times_v1))
+        avg_times_v2.append(np.mean(temp_times_v2))
+
+        final_count_vnone = np.mean(temp_counts_vnone)
+        final_count_v0 = np.mean(temp_counts_v0)
+        final_count_v1 = np.mean(temp_counts_v1)
+        final_count_v2 = np.mean(temp_counts_v2)
+        avg_counts_v1.append(final_count_v1)
+        avg_counts_v2.append(final_count_v2)
+
+        # Print stats
+        if final_count_v1 > 0:
+            reduction = 100 * (final_count_v1 - final_count_v2) / final_count_v1
+            print(f"{d:<10} | {final_count_vnone:<10.1f} | {final_count_v0:<10.1f} | {final_count_v1:<10.1f} | {final_count_v2:<10.1f}")
+        else:
+            print(f"{d:<10} | {final_count_vnone:<10.1f} | {final_count_v0:<10.1f} | {final_count_v1:<10.1f} | {final_count_v2:<10.1f}")
+
+    # --- Plotting ---
+    plt.figure(figsize=(10, 6))
+
+    # Plot Time
+    plt.plot(depths, avg_times_vnone, 's--', color='red', label="No Optimization")
+    plt.plot(depths, avg_times_v0, 's--', color='blue', label="V0: Reordering Only")
+    plt.plot(depths, avg_times_v1, 's--', color='green', label="V1: Basic Fusion")
+    plt.plot(depths, avg_times_v2, 's-', color='purple', label="V2: Commutativity Lookahead", linewidth=2)
+
+    plt.title(f"Optimizer Time Comparison (Avg over {runs} runs)")
+    plt.xlabel("Circuit Depth (Original Operations)")
+    plt.ylabel("Execution Time (seconds)")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+# ==============================================================================
 #                              Main Test Suite
 # ==============================================================================
 
@@ -733,6 +960,9 @@ if __name__ == "__main__":
     test_qpe_t_gate()
     test_qpe_approx_pi_3()
     test_grover_search(4, 13)
-    test_qft_adder(A=1, B=2, n_bits=3) # 1 + 2 = 3
-    test_qft_adder(A=5, B=6, n_bits=4) # 5 + 6 = 11
-    test_qft_adder(A=10, B=7, n_bits=4) # 10 + 7 = 17 (1 mod 16)
+    test_qft_adder(A=1, B=2, n_bits=3)
+    test_qft_adder(A=5, B=6, n_bits=4)
+    test_qft_adder(A=10, B=7, n_bits=4)
+    test_shors_algorithm(N=15, a=7)
+    test_shors_algorithm(N=15, a=2)
+    test_shors_algorithm(N=21, a=2)

@@ -108,101 +108,180 @@ class QuantumCircuit:
                     self.gates[i], self.gates[i + 1] = self.gates[i + 1], self.gates[i]
                     changed = True
 
-    def _fuse_gates(self, gate1: QuantumGate, gate2: QuantumGate) -> QuantumGate:
+    def _fuse_gates(self):
         """
-        Fuses two overlapping gates into a single larger gate using a mini quantum simulation.
-        Example: GateA(0,1) + GateB(1,2) -> Merged(0,1,2)
+        Merges consecutive single-qubit gates acting on the same qubit.
         """
+        if not self.gates:
+            return
 
-        # Identify union of all involved qubits
-        qubits1 = set(gate1.targets) | set(gate1.controls)
-        qubits2 = set(gate2.targets) | set(gate2.controls)
-        all_qubits = sorted(list(qubits1 | qubits2))
+        new_gates = []
 
-        # Map global qubit indices to local indices (0, 1, 2...)
-        global_to_local = {q: i for i, q in enumerate(all_qubits)}
-        n_local = len(all_qubits)
-        dim = 2 ** n_local
+        current_gate = self.gates[0]
 
-        # Create local versions of the gates
-        def to_local(g):
-            loc_t = [global_to_local[t] for t in g.targets]
-            loc_c = [global_to_local[c] for c in g.controls]
-            return QuantumGate(g.matrix, loc_t, loc_c)
+        for next_gate in self.gates[1:]:
+            # Both must have NO controls
+            # Both must target exactly the same qubit(s)
+            is_compatible = (
+                    len(current_gate.controls) == 0 and
+                    len(next_gate.controls) == 0 and
+                    current_gate.targets == next_gate.targets and
+                    len(current_gate.targets) == 1
+            )
 
-        loc_g1 = to_local(gate1)
-        loc_g2 = to_local(gate2)
+            if is_compatible:
+                # --- FUSION ---
 
-        # Use the simulator to build the unitary
-        fused_matrix = np.zeros((dim, dim), dtype=complex)
+                fused_matrix = next_gate.matrix @ current_gate.matrix
+                current_gate = QuantumGate(
+                    matrix=fused_matrix,
+                    targets=current_gate.targets,
+                    controls=[],
+                    name="Fused"
+                )
+            else:
+                # If not compatible, move on
+                new_gates.append(current_gate)
+                current_gate = next_gate
 
-        # Re-use a single state object for performance
-        temp_state = QuantumState(n_local, mode='dense')
+        # Append the final straggler
+        new_gates.append(current_gate)
+        self.gates = new_gates
 
-        for col in range(dim):
-            # Reset state to basis vector |col>
-            temp_state.state[:] = 0.0
-            temp_state.state[col] = 1.0
-
-            # Apply gates in order
-            loc_g1.apply(temp_state, method='dense')
-            loc_g2.apply(temp_state, method='dense')
-
-            # resulting state is the column of new matrix
-            fused_matrix[:, col] = temp_state.state
-
-        # Create the new merged gate
-        new_name = f"{gate1.name}+{gate2.name}"
-        if len(new_name) > 20: new_name = "Fused"
-
-        return QuantumGate(fused_matrix, targets=all_qubits, controls=[], name=new_name)
-
-    def optimise(self, max_fusion_size: int = 4):
+    def _remove_identities(self, tol=1e-9):
         """
-        Optimizes the circuit by reordering and FUSING gates. Gates are generally pretty small, only affecting one or two qubits,
-         so by running sub-simulations on a small state space to fuse gates we keep number of gate applications on 2^n state space smaller
+        Removes gates that are effectively Identity matrices.
+        """
+        cleaned_gates = []
+        for gate in self.gates:
+            # Check size of matrix to generate appropriate Identity
+            d = gate.matrix.shape[0]
+            identity = np.eye(d, dtype=complex)
 
-        Args:
-            max_fusion_size: Maximum number of qubits a fused gate can touch (3-5 recommended or sub-simulation inefficient).
+            # Check if matrix is close to Identity (or global phase equivalent)
+            # A simple check is checking distance to Identity
+            if not np.allclose(gate.matrix, identity, atol=tol):
+                cleaned_gates.append(gate)
+
+        self.gates = cleaned_gates
+
+    # ---------------------------------------------------------
+    #           Advanced Optimisation Helpers
+    # ---------------------------------------------------------
+
+    def _is_diagonal(self, gate: QuantumGate, tol: float = 1e-10) -> bool:
+        """
+        Checks if a gate's matrix is diagonal.
+        """
+        return np.allclose(gate.matrix, np.diag(np.diagonal(gate.matrix)), atol=tol)
+
+    def _get_qubits(self, gate: QuantumGate) -> set:
+        """get all qubits (targets + controls) involved in a gate."""
+        return set(gate.targets) | set(gate.controls)
+
+    def _commutes(self, g1: QuantumGate, g2: QuantumGate) -> bool:
+        """
+        Checks if two gates commute (AB = BA).
+        """
+        # If they don't share any wires, commute.
+        q1 = self._get_qubits(g1)
+        q2 = self._get_qubits(g2)
+        if q1.isdisjoint(q2):
+            return True
+
+        # Two diagonal gates always commute.
+        if self._is_diagonal(g1) and self._is_diagonal(g2):
+            return True
+
+        return False
+
+    def _try_merge(self, g1: QuantumGate, g2: QuantumGate) -> Union[QuantumGate, None]:
+        """
+        Attempts to merge g2 INTO g1 (Result = g2 @ g1).
+        """
+        if g1.targets != g2.targets or g1.controls != g2.controls:
+            return None
+
+        if self._is_diagonal(g1) and self._is_diagonal(g2):
+            fused_matrix = g2.matrix @ g1.matrix
+            return QuantumGate(fused_matrix, g1.targets, g1.controls, "FusedDiag")
+
+        fused_matrix = g2.matrix @ g1.matrix
+        return QuantumGate(fused_matrix, g1.targets, g1.controls, "Fused")
+
+    def _optimise_commutativity(self):
+        """
+        Correct implementation of Commutativity-Aware Fusion.
+        Strategy: Forward-Folding.
+        We scan Gate A. We look ahead. If A commutes with intervening gates,
+        we verify if it fuses with a target gate. If so, we merge A INTO the target
+        and delete A from its original position.
+        """
+        if len(self.gates) < 2: return
+
+        # We must use a while loop because we are modifying the list length on the fly
+        i = 0
+        while i < len(self.gates) - 1:
+            current_gate = self.gates[i]
+            did_fuse = False
+
+            # Look ahead from i+1
+            for j in range(i + 1, len(self.gates)):
+                next_gate = self.gates[j]
+
+                # 1. CHECK FUSION (Can A merge into B?)
+                merged = self._try_merge(current_gate, next_gate)
+
+                if merged:
+                    # SUCCESS!
+                    # Gate A (current) has traveled forward to Gate B (next).
+                    # We update Gate B to be the result.
+                    self.gates[j] = merged
+
+                    # We remove Gate A from the circuit.
+                    del self.gates[i]
+
+                    # Flag that we modified the list
+                    did_fuse = True
+                    break
+
+                    # 2. CHECK COMMUTATIVITY (Can A pass B?)
+                # If they don't fuse, can 'current' safely skip 'next' to keep looking?
+                if self._commutes(current_gate, next_gate):
+                    continue
+                else:
+                    # BLOCKER FOUND.
+                    # 'current' cannot pass 'next'. Stop looking for this gate.
+                    break
+
+            # If we fused, we deleted index 'i', so the new gate at 'i'
+            # is what used to be 'i+1'. We stay at 'i' to check IT.
+            # If we didn't fuse, we are done with 'current', move to i+1.
+            if not did_fuse:
+                i += 1
+
+    def optimise(self, method: str = 'v2'):
+        """
+        Optimises the circuit by reordering, looking-ahead for fusion, and cleaning gates.
         """
 
         if len(self.gates) < 2: return
 
-        self._reorder_gates()
+        prev_count = len(self.gates) + 1
 
-        new_gates = []
-        pending_gates = list(self.gates)
+        while len(self.gates) < prev_count:
+            prev_count = len(self.gates)
 
-        while pending_gates:
-            current_gate = pending_gates.pop(0)
+            # Reorder (Group gates by qubit for locality)
+            self._reorder_gates()
 
-            i = 0
-            while i < len(pending_gates):
-                candidate_gate = pending_gates[i]
+            if method == 'v2':
+                self._optimise_commutativity()
+            elif method == 'v1':
+                self._fuse_gates()
 
-                q1 = set(current_gate.targets) | set(current_gate.controls)
-                q2 = set(candidate_gate.targets) | set(candidate_gate.controls)
-                union_qubits = q1 | q2
-
-                # size constraint
-                if len(union_qubits) <= max_fusion_size:
-                    current_gate = self._fuse_gates(current_gate, candidate_gate)
-
-                    # Remove candidate and continue optimizing
-                    pending_gates.pop(i)
-                    continue
-
-                # commute past this candidate?
-                if not q1.isdisjoint(q2):
-                    break
-
-                # If disjoint, skip this candidate and try to merge with the next one
-                i += 1
-
-            new_gates.append(current_gate)
-
-        self.gates = new_gates
-
+            # Clean (Remove Identities created by fusion)
+            self._remove_identities()
 
     # ---------------------------------------------------------
     #           Entanglement Circuits (Bell & GHZ)
@@ -512,3 +591,76 @@ class QuantumCircuit:
         append_shifted(iqft_on_n, offset=n_qubits, target_qc=qc)
 
         return qc
+
+    # ---------------------------------------------------------
+    #                     Shor's Algorithm
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def _make_modular_multiplication_matrix(a: int, N: int, n_qubits: int) -> np.ndarray:
+        """
+        Constructs the permutation matrix for the function f(x) = (a * x) mod N.
+        """
+        dim = 2 ** n_qubits
+        matrix = np.eye(dim, dtype=complex)  # Initialize as identity
+
+        perm_map = {}
+        for i in range(N):
+            dest = (a * i) % N
+            perm_map[i] = dest
+
+        # Apply permutation to the matrix rows/cols
+        matrix = np.zeros((dim, dim), dtype=complex)
+
+        for col in range(dim):
+            if col < N:
+                row = (a * col) % N
+                matrix[row, col] = 1.0
+            else:
+                matrix[col, col] = 1.0
+
+        return matrix
+
+    @staticmethod
+    def shors(N: int, a: int) -> 'QuantumCircuit':
+        """
+        Return the circuit for the Quantum Order-Finding subroutine of Shor's Algorithm.
+        """
+        if math.gcd(a, N) != 1:
+            raise ValueError(f"a ({a}) and N ({N}) must be coprime.")
+
+        m_qubits = N.bit_length()
+        t_qubits = 2 * m_qubits
+        total_qubits = t_qubits + m_qubits
+
+        _qc = QuantumCircuit(total_qubits)
+
+        # Initialize Target Register to |1> (integer 1)
+        _qc.add_gate(QuantumGate.x(total_qubits - 1))
+
+        # Superposition
+        QuantumCircuit.prepare_counting_register(_qc, t_qubits)
+
+        # Modular Exponentiation
+        target_indices = list(range(t_qubits, total_qubits))
+
+        for j in range(t_qubits):
+            power_val = pow(a, 2 ** j, N)
+
+            U_matrix = QuantumCircuit._make_modular_multiplication_matrix(power_val, N, m_qubits)
+
+            control_qubit = t_qubits - 1 - j
+
+            gate = QuantumGate.cu(
+                control=control_qubit,
+                target_qubits=target_indices,
+                unitary_matrix=U_matrix,
+                k=1
+            )
+            _qc.add_gate(gate)
+
+        # Inverse QFT
+        iqft_qc = QuantumCircuit.qft(t_qubits, inverse=True, swap_endian=True)
+        _qc.gates.extend(iqft_qc.gates)
+
+        return _qc

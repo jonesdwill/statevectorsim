@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import math
 import pandas as pd
 from typing import List, Dict, Union
+import random
+from statevectorsim import QuantumState, QuantumGate, QuantumCircuit, QuantumChannel
 
 def single_qubit_bloch_vector(state, qubit_index):
     """
@@ -377,3 +379,60 @@ def circuit_to_ascii(circuit: 'QuantumCircuit', initial_state_label: str = '|0>'
             qubit_last_gate_end[q] = start_col + GATE_TOTAL_WIDTH
 
     return "\n".join(lines)
+
+
+def create_random_circuit(n_qubits=3, depth=20, bias_factor=0.3):
+    """
+    Creates a random circuit doped with 'commutation sandwiches' to showcase V2 optimizer.
+
+    Args:
+        n_qubits (int): Number of qubits.
+        depth (int): Number of operations.
+        bias_factor (float): Probability (0-1) of injecting an optimization puzzle
+                             instead of a random gate.
+    """
+    qc = QuantumCircuit(n_qubits)
+
+    # Standard options
+    single_no_param = ['h', 'x', 'y', 'z', 's', 't']
+    single_param = ['rx', 'ry', 'rz']
+    two_no_param = ['cx', 'cy', 'cz']
+
+    random_options = single_no_param + single_param + two_no_param
+
+    for _ in range(depth):
+        # Pick random qubits safely
+        q1 = random.randint(0, n_qubits - 1)
+        q2 = (q1 + 1) % n_qubits
+
+        # --- LOGIC: Should we inject a solvable by V2, unsolvable by V1? ---
+        if random.random() < bias_factor:
+
+            theta = random.uniform(0, 2 * np.pi)
+            qc.add_gate(QuantumGate.rx(q1, theta))
+
+            # Disjoint or Commuting
+            if n_qubits > 1:
+                qc.add_gate(QuantumGate.h(q2))
+            else:
+                qc.add_gate(QuantumGate.z(q1))
+
+            qc.add_gate(QuantumGate.rx(q1, -theta))
+
+        else:
+            choice = random.choice(random_options)
+            theta = random.uniform(0, 2 * np.pi)
+
+            if choice in single_no_param:
+                method = getattr(QuantumGate, choice)
+                qc.add_gate(method(q1))
+
+            elif choice in single_param:
+                method = getattr(QuantumGate, choice)
+                qc.add_gate(method(q1, theta))
+
+            elif choice in two_no_param and n_qubits > 1:
+                method = getattr(QuantumGate, choice)
+                qc.add_gate(method(q1, q2))
+
+    return qc
