@@ -137,7 +137,7 @@ pip install statevectorsim
 ```
 
 ### From Source (Development)
-If you want to modify the source code:
+If you want to modify the source code, or use the test and benchmark utils:
 1. Clone the repository:
 
 ``` bash
