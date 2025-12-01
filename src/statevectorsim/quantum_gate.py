@@ -6,6 +6,18 @@ from scipy.sparse import csr_matrix, identity, block_diag, kron, isspmatrix_csr,
 
 
 def _generate_permutation_matrix(n: int, current_order: List[int], target_order: List[int]) -> csr_matrix:
+    """
+    Generates a sparse permutation matrix to reorder qubits in a statevector.
+
+    Args:
+        n (int): Total number of qubits.
+        current_order (List[int]): The current qubit ordering (usually [0, 1, ..., n-1]).
+        target_order (List[int]): The desired qubit ordering.
+
+    Returns:
+        csr_matrix: The 2^n x 2^n permutation matrix.
+    """
+
     if current_order == target_order:
         return identity(2 ** n, dtype=complex, format='csr')
 
@@ -31,7 +43,34 @@ def _generate_permutation_matrix(n: int, current_order: List[int], target_order:
 
 
 class QuantumGate:
+    """
+    Represents a Unitary Quantum Gate.
+
+    Handles gate matrices and their application. Supports application by:
+    1. Tensor Slicing (Dense, small k): Fast for single-qubit gates on dense states.
+    2. Bitmasking (Dense, controls): Handles controlled gates by iterating indices.
+    3. Sparse Multiplication (Sparse): Efficient for large N with sparse states.
+
+    Attributes:
+        matrix (np.ndarray): The 2^k x 2^k unitary matrix of the gate.
+        targets (list[int]): Indices of the target qubits.
+        controls (list[int]): Indices of the control qubits.
+        name (str): display name of the gate.
+    """
+
     def __init__(self, matrix: np.ndarray, targets: list[int], controls: list[int] = None, name: str = 'CustomGate'):
+        """
+          Initialize a QuantumGate.
+
+          Args:
+              matrix (np.ndarray): unitary matrix (2^k x 2^k).
+              targets (list[int]): The target qubit indices.
+              controls (list[int], optional): The control qubit indices. Defaults to None.
+              name (str, optional): Name for identification. Defaults to 'CustomGate'.
+
+          Raises:
+              ValueError: If matrix dimensions don't match the number of targets or if targets/controls overlap.
+          """
 
         # robust check: matrix dimension is only checked against targets
         expected_dim = 2 ** len(targets)
@@ -135,7 +174,18 @@ class QuantumGate:
 
     def _apply_tensor(self, state: np.ndarray, n: int, k: int) -> np.ndarray:
         """
-        Multi-qubit gate application using NumPy's efficient tensor reshape and permutation (k >= 1).
+        Multi-qubit gate application using NumPy's efficient tensor reshape and permutation.
+
+        Reshapes the statevector into a tensor of shape (2, 2, ..., 2), permutes the axes so that the target qubits are at the start,
+        and applies the gate matrix. Avoids creating the full 2^N x 2^N unitary matrix.
+
+        Args:
+            state (np.ndarray): dense statevector (size 2^n).
+            n (int): Total number of qubits.
+            k (int): Number of target qubits for this gate.
+
+        Returns:
+            np.ndarray: The new statevector after applying the gate.
         """
 
         gate_matrix = self.matrix
@@ -172,8 +222,20 @@ class QuantumGate:
 
     def _apply_bitmask(self, state: np.ndarray, n: int, k: int) -> np.ndarray:
         """
-        Multi-qubit gate application using generalized index-based iteration (k >= 1).
-        Handles controls by conditionally applying the gate matrix.
+        Multi-qubit gate application using generalized index-based iteration.
+
+        To be used when controls are present. Iterates through the
+        statevector indices, identifies blocks where the target qubits change
+        and other targets are fixed, checks the control condition, and applies
+        matrix multiplication only to valid blocks.
+
+        Args:
+            state (np.ndarray): dense statevector.
+            n (int): Total number of qubits.
+            k (int): Number of target qubits.
+
+        Returns:
+            np.ndarray: The updated statevector.
         """
 
         gate_matrix = self.matrix
@@ -230,8 +292,14 @@ class QuantumGate:
 
     def _apply_sparse(self, quantum_state: 'QuantumState'):
         """
-        Apply gate directly to the non-zero elements of sparse state vector.
-        Avoids constructing full 2^N x 2^N operator matrix.
+        Apply gate directly to the non-zero elements of a sparse state vector (CSR).
+
+        Instead of constructing a massive 2^N x 2^N gate matrix, this method
+        extracts the active indices from the state, performs small matrix
+        multiplications, and reconstructs the sparse result.
+
+        Args:
+            quantum_state (QuantumState): The state object (must be in 'sparse' mode).
         """
 
         # Get current sparse state data (CSR format)
@@ -347,7 +415,14 @@ class QuantumGate:
 
     def apply(self, quantum_state, method: str = 'dense'):
         """
-        Apply k-qubit QuantumGate to an n-qubit QuantumState using the specified method.
+        Apply the gate to a QuantumState using the specified method.
+
+        Main dispatch method. It checks the state's mode and requested method, performs conversions if necessary,
+        and routes to _apply_tensor, _apply_bitmask, or _apply_sparse.
+
+        Args:
+            quantum_state (QuantumState): state to apply the gate to.
+            method (str, optional): 'dense' or 'sparse'. Defaults to 'dense'.
         """
 
         n = quantum_state.n

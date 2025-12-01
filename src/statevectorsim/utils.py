@@ -9,6 +9,14 @@ from statevectorsim import QuantumState, QuantumGate, QuantumCircuit, QuantumCha
 def single_qubit_bloch_vector(state, qubit_index):
     """
     Compute qubit's Bloch vector (x, y, z) in a multi-qubit state.
+
+    Args:
+        state (np.ndarray): full statevector of the system (2^N amplitudes).
+        qubit_index (int): index of qubit to analyze (0 to N-1).
+
+    Returns:
+        np.ndarray: A numpy array [x, y, z] representing the vector on the Bloch sphere.
+
     """
     n_qubits = int(np.log2(len(state)))
     state_tensor = state.reshape([2] * n_qubits)
@@ -28,7 +36,12 @@ def single_qubit_bloch_vector(state, qubit_index):
 
 def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
     """
-    Bloch sphere plot for multi-qubit state, given a statevector. Plots multiple bloch spheres.
+    Bloch sphere plot for multi-qubit state, given a statevector. Supports multiple bloch spheres.
+
+    Args:
+        state (np.ndarray): The full statevector.
+        fig_size (tuple, optional): Size of each subplot. Defaults to (4, 4).
+        max_cols (int, optional): Maximum number of spheres per row. Defaults to 4.
     """
 
     n_qubits = int(np.log2(len(state)))
@@ -150,7 +163,17 @@ def plot_bloch_spheres(state, fig_size=(4, 4), max_cols=4):
     plt.show()
 
 def statevector_to_dataframe(state: np.ndarray, little_endian=True):
-    """ Convert a statevector to a pandas DataFrame. Little-endian (default). """
+    """
+    Converts statevector into a readable pandas DataFrame. Useful for inspecting the amplitudes and phases of basis states.
+
+    Args:
+        state (np.ndarray): statevector.
+        little_endian (bool, optional): If True, labelled |q0 q1 ...>.
+                                        If False, labelled |... q1 q0>.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns ['Index', 'State', 'Amplitude'].
+    """
 
     # get num qubits from state
     n = int(np.log2(len(state)))
@@ -178,7 +201,13 @@ def statevector_to_dataframe(state: np.ndarray, little_endian=True):
     return df
 
 def plot_histogram(results: Dict[str, int], shots: int):
-    """ Generates probability histogram from multi-shot measurement results. """
+    """
+    Generates probability histogram from multi-shot measurement results.
+
+    Args:
+        results (Dict[str, int]): Dictionary mapping measurement bitstrings (e.g., '011') to counts.
+        shots (int): Total number of simulation shots.
+    """
 
     if not results:
         print("No results to plot.")
@@ -216,8 +245,17 @@ def plot_histogram(results: Dict[str, int], shots: int):
 
 def format_statevector(state: np.ndarray) -> str:
     """
-    Formats the complex state vector into a readable string representation
-    with basis states (e.g., |00> 0.7071+0.0000j).
+    Formats the complex state vector into a readable string representation (non-zero states).
+
+    Example output:
+        |00> (0.7071+0.0000j)
+        |11> (0.7071+0.0000j)
+
+    Args:
+        state (np.ndarray): The dense statevector.
+
+    Returns:
+        str: A multiline string describing the superposition.
     """
     n_qubits = int(np.log2(len(state)))
     output = []
@@ -238,8 +276,14 @@ def format_statevector(state: np.ndarray) -> str:
 
 def _group_simultaneous_gates(gates: list) -> List[Union[list, object]]:
     """
-    Groups consecutive single-qubit gates that target disjoint qubits
-    into a single list (representing a column of gates).
+    Groups consecutive single-qubit gates that target disjoint qubits into a single list (representing a column of gates).
+
+    Args:
+        gates (list): List of QuantumGate objects.
+
+    Returns:
+        List: A list where elements are either single QuantumGate objects or
+              lists of QuantumGate objects (parallel block).
     """
     if not gates:
         return []
@@ -287,8 +331,20 @@ def _group_simultaneous_gates(gates: list) -> List[Union[list, object]]:
 
 def circuit_to_ascii(circuit: 'QuantumCircuit', initial_state_label: str = '|0>') -> str:
     """
-    Generates an ASCII/text representation of the quantum circuit.
-    (Only the body of the function is shown for brevity)
+    Generates an ASCII text representation of the quantum circuit.
+
+    Visualizes qubit lines, gates, controls, and SWAPs.
+    Example:
+    q0: |0>---H---*---
+                  |
+    q1: |0>-------X---
+
+    Args:
+        circuit (QuantumCircuit): The circuit to draw.
+        initial_state_label (str, optional): Label for the left-hand side. Defaults to '|0>'.
+
+    Returns:
+        str: The ASCII diagram.
     """
     n_qubits = circuit.n
     if n_qubits == 0:
@@ -380,16 +436,18 @@ def circuit_to_ascii(circuit: 'QuantumCircuit', initial_state_label: str = '|0>'
 
     return "\n".join(lines)
 
-
 def create_random_circuit(n_qubits=3, depth=20, bias_factor=0.3):
     """
-    Creates a random circuit doped with 'commutation sandwiches' to showcase V2 optimizer.
+    Creates a random circuit, injected with commutable series of gates to test optimisation.
 
     Args:
         n_qubits (int): Number of qubits.
-        depth (int): Number of operations.
-        bias_factor (float): Probability (0-1) of injecting an optimization puzzle
-                             instead of a random gate.
+        depth (int): Number of gate operations to generate.
+        bias_factor (float): Probability (0.0 to 1.0) of injecting a specific
+                             cancellation puzzle (e.g., Rx(a) - H - Rx(-a)).
+
+    Returns:
+        QuantumCircuit: A randomly generated circuit.
     """
     qc = QuantumCircuit(n_qubits)
 

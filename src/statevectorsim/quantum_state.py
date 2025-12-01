@@ -5,7 +5,30 @@ from scipy.sparse import csr_matrix, lil_matrix
 
 
 class QuantumState:
+    """
+    Manages n-qubit state vector of a quantum system.
+
+    Supports switching between dense representation (NumPy array) and
+    sparse representation (SciPy CSR matrix).
+
+    Attributes:
+        n (int): Number of qubits in the system.
+        dim (int): Dimension of the Hilbert space (2^n).
+        mode (str): Active storage mode ('dense' or 'sparse'). Defaults to 'sparse'.
+        _state (np.ndarray): Dense NumPy array of Statevector.
+        sparse_state (csr_matrix): Sparse CSR matrix of Statevector.
+    """
+
     def __init__(self, n_qubits: int, mode: str = 'sparse', tolerance: float = 1e-12):
+        """
+         Initialize n-qubit quantum state to the zero state |0...0>.
+
+         Args:
+             n_qubits (int): Number of qubits.
+             mode (str, optional): Initial storage mode ('dense' or 'sparse'). Defaults to 'sparse'.
+             tolerance (float, optional): Threshold for cleaning sparse states. Defaults to 1e-12.
+         """
+
         self.n = n_qubits
         self.dim = 2 ** n_qubits
         self.TOLERANCE = tolerance
@@ -26,7 +49,12 @@ class QuantumState:
     @property
     def state(self) -> np.ndarray:
         """
-        Property that ensures the dense state is up-to-date before returning it.
+        Access the state vector as a dense NumPy array.
+
+        If the current mode is 'sparse', then convert before returning.
+
+        Returns:
+            np.ndarray: Statevector shape (2^n,).
         """
         if self.mode == 'sparse':
             self.to_dense()
@@ -36,11 +64,19 @@ class QuantumState:
     def state(self, value: np.ndarray):
         """
         Setter to update the dense state manually.
+
+        Args:
+            value (np.ndarray): The new state vector.
         """
         self._state = value
 
     def basis_state(self, index: int = 0):
-        """Initializes the state to the specified basis state |index>."""
+        """
+        Initializes the state to the specified basis state |index>.
+
+        Args:
+            index (int): The integer representation of the basis state. Defaults to 0 (|0...0>)
+        """
         # Set dense
         self._state[:] = 0
         self._state[index] = 1.0 + 0j
@@ -58,16 +94,31 @@ class QuantumState:
             self.mode = 'sparse'
 
     def statevector(self) -> np.ndarray:
-        """Returns current state vector as a dense NumPy array."""
+        """
+        Returns current state vector as a dense NumPy array.
+
+        Returns:
+            np.ndarray: A copy of the dense state vector.
+            """
         # The property access 'self.state' will now trigger to_dense() automatically
         return self.state.copy()
 
     def get_probabilities(self) -> np.ndarray:
-        """Calculates and returns the probability vector."""
+        """
+        Calculates and returns the probability vector.
+
+        Returns:
+            np.ndarray: Array of probabilities summing to 1.0.
+            """
         return np.abs(self.state) ** 2
 
     def copy(self) -> 'QuantumState':
-        """ Copy state for multi-shot runs. """
+        """
+        Deep copy of state for multi-shot runs.
+
+        Returns:
+            QuantumState: A new independent instance with the same state vector and mode.
+        """
         new_state = self.__class__(self.n, mode=self.mode)
 
         if self.mode == 'dense':
@@ -85,7 +136,9 @@ class QuantumState:
     def clean_sparse(self, tolerance: float = 1e-10):
         """
         Removes all amplitudes from the sparse state that are below tolerance.
-        Handles complex magnitudes correctly.
+
+        Args:
+            tolerance (float, optional): The cutoff threshold. Defaults to 1e-10.
         """
         # Identify noise: values where magnitude is less than tolerance
         mask = np.abs(self.sparse_state.data) < tolerance
@@ -103,6 +156,12 @@ class QuantumState:
     def to_dense(self, source: Union[csr_matrix, None] = None) -> np.ndarray:
         """
         Converts active sparse state to dense NumPy array.
+
+        Args:
+            source (csr_matrix, optional): Sparse matrix to convert. If None, uses self.sparse_state.
+
+        Returns:
+            np.ndarray: The dense state vector.
         """
         if source is None:
             source = self.sparse_state
@@ -116,6 +175,12 @@ class QuantumState:
     def to_sparse(self, source: Union[np.ndarray, None] = None) -> csr_matrix:
         """
         Converts active dense state to sparse CSR matrix.
+
+        Args:
+            source (np.ndarray, optional): Dense array to convert. If None, uses self._state.
+
+        Returns:
+            csr_matrix: Sparse state vector.
         """
         if source is None:
             # Use backing field
@@ -134,8 +199,18 @@ class QuantumState:
     # -------------------------------------
 
     def measure_qubit(self, qubit: int):
-        # Temporarily switch to dense mode via property access
-        # caching original mode to restore later if desired
+        """
+        Performs a projective measurement on a single qubit.
+
+        Collapses the state vector to the subspace consistent with the measurement outcome and re-normalizes.
+
+        Args:
+            qubit (int): index of qubit to measure.
+
+        Returns:
+            int: measurement outcome (0 or 1).
+        """
+
         original_mode = self.mode
 
         state = self.state  # Triggers sync if sparse
@@ -169,12 +244,21 @@ class QuantumState:
         return outcome
 
     def measure_all(self):
+        """
+        Simulates measurement of all qubits.
+
+        Collapses the state vector to a single basis state.
+
+        Returns:
+            list[int]: list of bits representing the measurement outcome (e.g., [0, 1, 1, 0]).
+                       Ordered from most significant qubit (n-1) to least significant (0).
+        """
+
         original_mode = self.mode
 
         state = self.state  # Triggers sync
         probability_vector = np.abs(state) ** 2
 
-        # Normalize just in case
         probability_vector /= np.sum(probability_vector)
 
         index = np.random.choice(len(state), p=probability_vector)

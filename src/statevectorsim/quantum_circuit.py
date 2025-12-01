@@ -7,7 +7,23 @@ from typing import Union
 
 
 class QuantumCircuit:
+    """
+    Main interface for building, optimizing, and executing
+    quantum algorithms. Includes a built-in library of common algorithms
+    (Shor's, Grover's, QFT, etc.) and two optimisation engines.
+
+    Attributes:
+        n (int): The number of qubits in the circuit.
+        gates (list[QuantumGate]): The ordered list of gates to be executed.
+    """
+
     def __init__(self, n_qubits: int):
+        """
+        Initialize an empty quantum circuit.
+
+        Args:
+            n_qubits (int): The total number of qubits.
+        """
         self.n = n_qubits
         self.gates: list[QuantumGate] = []
 
@@ -16,7 +32,7 @@ class QuantumCircuit:
         self.gates = []
 
     def copy(self):
-        """ Creates a new deep-copy QuantumCircuit instance """
+        """ Creates and returns a new deep-copy QuantumCircuit instance """
         new_qc = QuantumCircuit(self.n)
         # Copy the list of references to the existing gate objects
         new_qc.gates = list(self.gates)
@@ -24,8 +40,13 @@ class QuantumCircuit:
 
     def add_gate(self, gate: Union[QuantumGate, 'QuantumCircuit', List[QuantumGate]]):
         """
-        Add a single QuantumGate, a list/tuple of QuantumGate objects, or
-        all gates from another QuantumCircuit instance to the current circuit.
+        Adds one or more gates to the end of the circuit.
+
+        Args:
+            gate (Union[QuantumGate, QuantumCircuit, List[QuantumGate]]):
+                - A single QuantumGate object.
+                - Another QuantumCircuit (appends all its gates).
+                - A list of QuantumGate objects.
         """
 
         # QuantumCircuit instance
@@ -41,7 +62,18 @@ class QuantumCircuit:
             self.gates.append(gate)
 
     def run(self, quantum_state, inverse:bool=False, method: str = 'dense') -> QuantumState:
-        """ Apply quantum gates to state in order """
+        """
+        Executes circuit on a provided QuantumState. Modifies state in-place.
+
+        Args:
+            quantum_state (QuantumState): state vector to evolve.
+            inverse (bool, optional): If True, runs the circuit in reverse order,
+                                      using conjugate transpose of each gate.
+            method (str, optional): simulation backend ('dense' or 'sparse'). Defaults to 'dense'.
+
+        Returns:
+            QuantumState: The modified state object.
+        """
 
         # forward
         if not inverse:
@@ -59,7 +91,17 @@ class QuantumCircuit:
 
     def simulate(self, initial_state: QuantumState, shots: int = 1024, method: str = 'dense') -> dict[str, int]:
         """
-        Runs the circuit multiple times and returns a dictionary of measurement outcomes.
+        Simulates the circuit multiple times (Monte Carlo) to get measurement statistics.
+
+        Does NOT modify `initial_state`. Instead, creates deep copy for each shot.
+
+        Args:
+            initial_state (QuantumState): initial state (usually |0...0>).
+            shots (int, optional): Number of times to run the simulation. Defaults to 1024.
+            method (str, optional): Simulation backend ('dense' or 'sparse'). Defaults to 'dense'.
+
+        Returns:
+            dict[str, int]: A dictionary mapping bitstrings (e.g., '011') to counts.
         """
         if initial_state.n != self.n:
             raise ValueError(f"Initial state must have the same number of qubits as the circuit.")
@@ -85,12 +127,12 @@ class QuantumCircuit:
 
         return results
 
-    # =========================================================
-    #                      Optimiser!
-    # =========================================================
+    # ---------------------------------------------------------
+    #               V1 Optimiser Helpers
+    # ---------------------------------------------------------
 
     def _reorder_gates(self):
-        """ Bubble-sort gates to improve locality (group by target qubit). """
+        """ Bubble-sort gates to improve locality (group gates by target qubit to facilitate fusion). """
         if len(self.gates) < 3: return
         changed = True
         while changed:
@@ -166,7 +208,7 @@ class QuantumCircuit:
         self.gates = cleaned_gates
 
     # ---------------------------------------------------------
-    #           Advanced Optimisation Helpers
+    #          V2 Advanced Optimisation Helpers
     # ---------------------------------------------------------
 
     def _is_diagonal(self, gate: QuantumGate, tol: float = 1e-10) -> bool:
@@ -181,7 +223,7 @@ class QuantumCircuit:
 
     def _commutes(self, g1: QuantumGate, g2: QuantumGate) -> bool:
         """
-        Checks if two gates commute (AB = BA).
+        Checks if two gates commute (AB = BA). Disjoint qubit gates always commute. Digonal matrices commute.
         """
         # If they don't share any wires, commute.
         q1 = self._get_qubits(g1)
@@ -211,15 +253,10 @@ class QuantumCircuit:
 
     def _optimise_commutativity(self):
         """
-        Correct implementation of Commutativity-Aware Fusion.
-        Strategy: Forward-Folding.
-        We scan Gate A. We look ahead. If A commutes with intervening gates,
-        we verify if it fuses with a target gate. If so, we merge A INTO the target
-        and delete A from its original position.
+        V2 Optimisation. For a gate A, scans ahead to find a compatible gate B to fuse with.
         """
         if len(self.gates) < 2: return
 
-        # We must use a while loop because we are modifying the list length on the fly
         i = 0
         while i < len(self.gates) - 1:
             current_gate = self.gates[i]
@@ -229,40 +266,40 @@ class QuantumCircuit:
             for j in range(i + 1, len(self.gates)):
                 next_gate = self.gates[j]
 
-                # 1. CHECK FUSION (Can A merge into B?)
+                # CHECK FUSION (Can A merge into B?)
                 merged = self._try_merge(current_gate, next_gate)
 
                 if merged:
-                    # SUCCESS!
-                    # Gate A (current) has traveled forward to Gate B (next).
-                    # We update Gate B to be the result.
+                    # Gate A (current) has traveled forward to Gate B (next). update Gate B to be the result.
                     self.gates[j] = merged
 
-                    # We remove Gate A from the circuit.
+                    # remove Gate A from the circuit.
                     del self.gates[i]
 
-                    # Flag that we modified the list
+                    # flag modification
                     did_fuse = True
                     break
 
-                    # 2. CHECK COMMUTATIVITY (Can A pass B?)
-                # If they don't fuse, can 'current' safely skip 'next' to keep looking?
+                # CHECK COMMUTATIVITY (Can A pass B?)
                 if self._commutes(current_gate, next_gate):
                     continue
                 else:
                     # BLOCKER FOUND.
-                    # 'current' cannot pass 'next'. Stop looking for this gate.
                     break
 
-            # If we fused, we deleted index 'i', so the new gate at 'i'
-            # is what used to be 'i+1'. We stay at 'i' to check IT.
-            # If we didn't fuse, we are done with 'current', move to i+1.
             if not did_fuse:
                 i += 1
 
     def optimise(self, method: str = 'v2'):
         """
-        Optimises the circuit by reordering, looking-ahead for fusion, and cleaning gates.
+        Main entry point for circuit optimization.
+
+        Iteratively reorders, fuses, and cleans circuit until convergence.
+
+        Args:
+            method (str, optional):
+                - 'v1': Basic adjacent fusion.
+                - 'v2': Commutativity-aware lookahead fusion. Defaults to 'v2'.
         """
 
         if len(self.gates) < 2: return
@@ -290,7 +327,10 @@ class QuantumCircuit:
     @staticmethod
     def bell():
         """
-        Return 2-qubit Bell state circuit (|Φ+⟩ = (|00⟩ + |11⟩)/√2).
+        Generates a 2-qubit Bell state circuit (|Φ+⟩ = (|00⟩ + |11⟩)/√2).
+
+        Returns:
+            QuantumCircuit: The configured circuit.
         """
         _qc = QuantumCircuit(2)
         _qc.add_gate(QuantumGate.h(0))  # Hadamard on qubit 0
@@ -300,7 +340,13 @@ class QuantumCircuit:
     @staticmethod
     def ghz(n_qubits=3):
         """
-        Return a GHZ state circuit for n_qubits (|GHZ⟩ = (|00...0⟩ + |11...1⟩)/√2). n >= 2.
+        Generates a GHZ state circuit for n qubits (|GHZ⟩ = (|00...0⟩ + |11...1⟩)/√2).
+
+        Args:
+            n_qubits (int): Number of qubits (must be >= 2).
+
+        Returns:
+            QuantumCircuit: The configured circuit.
         """
         if n_qubits < 2:
             raise ValueError("GHZ state requires at least 2 qubits.")
@@ -321,8 +367,19 @@ class QuantumCircuit:
     @staticmethod
     def qft(n_qubits: int, swap_endian: bool = False, inverse: bool = False):
         """
-        Return n-qubit Quantum Fourier Transform (QFT) circuit.
-        Implementation is MSB-first.
+        Generates the Quantum Fourier Transform (QFT) circuit.
+
+        Maps the computational basis states |x> to Fourier basis states.
+        Uses the standard H + Controlled-Phase architecture.
+
+        Args:
+            n_qubits (int): Number of qubits.
+            swap_endian (bool, optional): If True, adds SWAP gates at the end to reverse
+                                          qubit order (matching textbook QFT). Defaults to False.
+            inverse (bool, optional): If True, generates the Inverse QFT (IQFT). Defaults to False.
+
+        Returns:
+            QuantumCircuit: The QFT circuit.
         """
 
         if n_qubits < 1:
@@ -480,7 +537,10 @@ class QuantumCircuit:
     @staticmethod
     def grover_oracle(_qc: 'QuantumCircuit', n_qubits: int, marked_state_index: int):
         """
-        Applies the n-qubit Grover oracle operator O.
+        Applies the Phase Oracle for a specific marked state |w>.
+
+        O = I - 2|w><w|
+        Flips the phase of the marked state to -1.
         """
         qubits = list(range(n_qubits))
 
@@ -509,13 +569,16 @@ class QuantumCircuit:
     @staticmethod
     def grover_search(n_qubits: int, marked_state_index: int) -> 'QuantumCircuit':
         """
-        Creates QuantumCircuit for Grover's Search.
+        Generates the full Grover's Search circuit.
+
+        Automatically calculates the optimal num of iterations R approx (pi/4)*sqrt(N).
 
         Args:
-            n_qubits (int): The number of qubits in the search space (N=2^n).
-            marked_state_index (int): decimal index of the unique search state |w>
+            n_qubits (int): Size of the search space N=2^n.
+            marked_state_index (int): The index of the item to search for.
+
         Returns:
-            QuantumCircuit: The complete Grover's circuit.
+            QuantumCircuit: The Grover search circuit.
         """
 
         if n_qubits < 2:
@@ -551,9 +614,18 @@ class QuantumCircuit:
     @staticmethod
     def qft_adder(n_qubits: int) -> 'QuantumCircuit':
         """
-        QFT-based adder. Perform |B>|A> → |B + A mod 2^n>|A>.
+        Generates a Quantum Adder using QFT arithmetic.
+        Performs in-place addition: |B>|A> -> |B + A mod 2^n>|A>.
+
+        Registers:
           - A : qubits 0 .. n-1   (LSB..MSB)
           - B : qubits n .. 2n-1  (LSB..MSB)
+
+        Args:
+            n_qubits (int): The bit-width of the numbers to add. Total 2n qubits.
+
+        Returns:
+            QuantumCircuit: The adder circuit.
         """
         if n_qubits < 1:
             raise ValueError("n must be >= 1")
@@ -624,7 +696,17 @@ class QuantumCircuit:
     @staticmethod
     def shors(N: int, a: int) -> 'QuantumCircuit':
         """
-        Return the circuit for the Quantum Order-Finding subroutine of Shor's Algorithm.
+        Generates the Period-Finding subroutine for Shor's Algorithm.
+
+        Estimates the period 'r' such that a^r = 1 (mod N).
+        Uses QPE on the unitary operator U|y> = |ay mod N>.
+
+        Args:
+            N (int): The number to factor.
+            a (int): The base (randomly chosen coprime to N).
+
+        Returns:
+            QuantumCircuit: The period-finding circuit.
         """
         if math.gcd(a, N) != 1:
             raise ValueError(f"a ({a}) and N ({N}) must be coprime.")

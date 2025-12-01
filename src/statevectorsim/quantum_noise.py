@@ -6,10 +6,27 @@ from .quantum_circuit import QuantumCircuit
 
 class QuantumChannel(QuantumGate):
     """
-    Quantum noise channel that applies unitary operators based on a probability distribution (Monte Carlo simulation).
+    Quantum noise channel. Applies unitary operators based on a probability distribution (Monte Carlo simulation).
+
+    Attributes:
+        unitaries (List[np.ndarray]): List of unitary matrices representing possible errors.
+        probabilities (List[float]): Probabilities of each unitary. Must sum to 1.0.
+        targets (List[int]): Indices of target qubits.
+        name (str): Name of the channel.
+
     """
 
     def __init__(self, unitaries: List[np.ndarray], probabilities: List[float], targets: List[int], name: str = "Noise"):
+        """
+        Args:
+            unitaries (List[np.ndarray]): List of unitary matrices representing possible errors.
+            probabilities (List[float]): Probabilities of each unitary. Must sum to 1.0.
+            targets (List[int]): Indices of target qubits.
+            name (str): Name of the channel.
+
+        Raises:
+            ValueError: If the probabilities do not sum to 1.0 (within numerical tolerance).
+        """
 
         self.unitaries = unitaries
         self.probabilities = probabilities
@@ -21,8 +38,15 @@ class QuantumChannel(QuantumGate):
             raise ValueError(f"Noise probabilities must sum to 1.0, got {sum(probabilities)}")
 
     def apply(self, quantum_state, method: str = 'dense'):
-        """ Applies the noise channel by randomly selecting ONE unitary applying it to state.
         """
+        Applies the noise channel to a quantum state. Randomly selects one unitary based on the assigned probabilities
+        and applies it to the state vector.
+
+        Args:
+            quantum_state (QuantumState): State to be modified.
+            method (str, optional): Simulation backend ('dense' or 'sparse').
+        """
+
         # Select index based on probabilities
         selected_index = np.random.choice(len(self.unitaries), p=self.probabilities)
 
@@ -45,12 +69,19 @@ class QuantumChannel(QuantumGate):
     @staticmethod
     def depolarizing(target: int, p: float) -> 'QuantumChannel':
         """
-        Single-qubit Depolarizing channel. Simulates infidelity.
+        Single-qubit Depolarizing channel.
 
         - Prob 1-p: Identity (Success)
         - Prob p/3: X Error (Bit Flip)
         - Prob p/3: Y Error (Bit+Phase Flip)
         - Prob p/3: Z Error (Phase Flip)
+
+        Args:
+            target (int): Target qubit index.
+            p (float): Probability of depolarisation.
+
+        Returns:
+            QuantumChannel: Configured depolarizing channel.
         """
 
         I = np.eye(2, dtype=complex)
@@ -82,15 +113,29 @@ class QuantumChannel(QuantumGate):
 
 class NoiseModel:
     """
-    Manages error parameters and injects noise into QuantumCircuits.
+    A configuration object for managing error and injecting noise into QuantumCircuits.
+
+    Supports a uniform noise model where error rate is applied to every gate in the circuit.
     """
 
+
     def __init__(self, default_error_rate: float = 0.0):
+        """
+        Args:
+            default_error_rate (float): global probability of error for every gate operation.
+        """
+
         self.default_error_rate = default_error_rate
 
     def apply(self, circuit: 'QuantumCircuit') -> 'QuantumCircuit':
         """
-        Returns a NEW QuantumCircuit with noise injected after every gate.
+        Returns QuantumCircuit with noise injected after every gate.
+
+        Args:
+            circuit (QuantumCircuit): The clean input circuit.
+
+        Returns:
+            QuantumCircuit: A new circuit with noise channels injected.
         """
         from .quantum_circuit import QuantumCircuit
 
