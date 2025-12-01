@@ -1,7 +1,7 @@
 # Quantum Simulator
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![PyPI version](https://img.shields.io/badge/version-0.1.0-blue)
+![PyPI version](https://img.shields.io/badge/version-1.0.0-blue)
 
 A lightweight, quantum state-vector simulator, written in Python. This package includes a backend that
 switches between dense (NumPy) and sparse (SciPy CSR) matrix representations, optimised circuit compilation, noise modelling via Monte Carlo methods, and built-in implementations of 
@@ -130,8 +130,14 @@ results = backend.run(qc, shots=1000, noise_model=noise_model)
 
 ## Installation
 
-To set-up, follow the steps:
+### From PyPi (Recommended)
+The easiest way to install is via pip:
+```bash
+pip install statevectorsim
+```
 
+### From Source (Development)
+If you want to modify the source code:
 1. Clone the repository:
 
 ``` bash
@@ -208,4 +214,4 @@ This project is licensed under the MIT License. See the `LICENSE` file for full 
 
 ## Version
 
-Current version: 0.1.0
+Current version: 1.0.0
