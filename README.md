@@ -141,7 +141,7 @@ If you want to modify the source code, or use the test and benchmark utils:
 1. Clone the repository:
 
 ``` bash
-git clone https://github.com/jonesdwill/Quantum-Simulator.git
+git clone https://github.com/jonesdwill/statevectorsim.git
 cd Quantum-Simulator
 ```
 
