@@ -210,7 +210,7 @@ The `QuantumCircuit` class includes static methods to quickly generate common n-
 
 ## Future 
 
-I would like to implement the following modalities: superconducting, ion-trap, photonic, and neutral atom.
+Currently the simulator is quite high-level. I would like to implement the following modalities: superconducting, ion-trap, photonic, and neutral atom.
 
 --- 
 
