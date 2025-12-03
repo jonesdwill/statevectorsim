@@ -206,6 +206,18 @@ The `QuantumCircuit` class includes static methods to quickly generate common n-
 | **QPE** | `QuantumCircuit.qpe(t_qubits: int, unitary_matrix, m_qubits: int)` | $t+m$ | Quantum Phase Estimation to estimate the phase of a unitary operator $U$.                                        |
 | **Shor's Algo** | `QuantumCircuit.shors(N: int, a: int)` | $\approx 3 \log N$ | Quantum subroutine for Shor's Algorithm (factoring $N$).                                                         |
 
+## References
+
+- Nielsen, M. A. & Chuang, I. L. *Quantum Computation and Quantum Information*. 10th Anniversary Edition, Cambridge University Press (2011).  
+- Shor, P. W. “Algorithms for quantum computation: discrete logarithms and factoring.” *26th Annual Symposium on Foundations of Computer Science (FOCS)*, 124‑134 (1994).  
+- Grover, L. K. “A fast quantum mechanical algorithm for database search.” *Proceedings of the 28th Annual ACM Symposium on the Theory of Computing (STOC)*, 212‑219 (1996).  
+- IBM Quantum Experience — IBM’s cloud quantum computing platform and documentation. [https://quantum-computing.ibm.com](https://quantum-computing.ibm.com)  
+- Qiskit Documentation — The open-source quantum computing SDK from IBM. [https://qiskit.org/documentation](https://qiskit.org/documentation)  
+- 3Blue1Brown, *Quantum Computing Series* — A visual introduction to quantum computing concepts. [https://www.youtube.com/playlist?list=PLZHQObOWTQDMsr9K-rj53DwVRMYO3t5Yr](https://www.youtube.com/playlist?list=PLZHQObOWTQDMsr9K-rj53DwVRMYO3t5Yr)  
+- Quantum Country — A mnemonic medium for learning quantum computing and related concepts. [https://quantum.country](https://quantum.country)
+- Mastriani, M. Quantum Fourier transform is the building block for creating entanglement. PMC Article (2021). Link: https://pmc.ncbi.nlm.nih.gov/articles/PMC8593191/
+- PennyLane Team. Intro to Quantum Fourier Transform. Tutorial (2024). Link: https://pennylane.ai/qml/demos/tutorial_qft
+  
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for full details.
