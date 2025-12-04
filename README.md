@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![PyPI version](https://img.shields.io/badge/version-1.0.0-blue)
 
-A lightweight, quantum state-vector simulator, written in Python. A high-level implementation. 
+A lightweight, high-level, quantum state-vector simulator, written in Python. 
 
 This package includes a backend that switches between dense (NumPy) and sparse (SciPy CSR) matrix representations, optimised circuit compilation, noise modelling via Monte Carlo methods, and built-in implementations of 
 major quantum algorithms. Generally, it can efficiently handle up to 26-qubit circuits, though this is dependent on the memory you have available and circuit sparsity. After this memory scaling becomes too large.
