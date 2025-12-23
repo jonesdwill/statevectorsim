@@ -74,20 +74,20 @@ from statevectorsim.quantum_gate import QuantumGate
 from statevectorsim.quantum_backend import QuantumBackend
 from statevectorsim.utils import plot_histogram
 
-# 1. Initialize Backend
+# Initialise Backend
 backend = QuantumBackend()
 
-# 2. Create a Bell State Circuit
+# Create a Bell Circuit
 qr = QuantumState(2)
 qc = QuantumCircuit(2)
 qc.add_gate(QuantumGate.h(0))
 qc.add_gate(QuantumGate.cx(0, 1))
 
-# 3. Execute (Smart Backend automagically handles Mode)
+# Execute (Smart Backend automatically handles everything)
 # Runs 1024 shots
 results = backend.run(qc, qr, shots=1024)
 
-# 4. Visualize
+# Visualise
 print(f"Counts: {results}")
 plot_histogram(results, shots=1024)
 ```
@@ -99,10 +99,10 @@ qc = QuantumCircuit(3)
 
 print("Original Gate Count:", len(qc.gates))
 
-# Apply V2 Optimization (Commutativity-Aware Fusion)
+# Apply V2 Optimsation (Commutativity-Aware Fusion)
 qc.optimise(method='v2')
 
-print("Optimized Gate Count:", len(qc.gates))
+print("Optimised Gate Count:", len(qc.gates))
 ```
 
 3. Pre-built Algorithms
